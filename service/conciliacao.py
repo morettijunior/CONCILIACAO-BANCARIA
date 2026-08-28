@@ -30,3 +30,5 @@ for item in transacoes_ofx:
         f'[DIVERGÊNCIA] Data: {data_ofx} | Valor: {valor_ofx} | Histórico:'
         f' {memo_ofx}'
     )
+
+    
