@@ -3,6 +3,33 @@ from decimal import Decimal
 import fdb
 
 
+def consultar_extrato_bd(caixa='02'):
+  conexao = fdb.connect(
+      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      user='SYSDBA',
+      password='masterkey',
+      charset='ISO8859_1',
+  )
+  cursor = conexao.cursor()
+
+  try:
+    sql = """
+            SELECT IDEXTRATO, DATA, VALOR, HISTORICO, CONCILIADO, TIPO 
+            FROM FEXTRATO 
+            WHERE CODCAIXA = ?
+        """
+    cursor.execute(sql, (str(caixa).zfill(2),))
+    registros = cursor.fetchall()
+    return registros
+
+  except Exception as e:
+    print(f'[ERRO] Falha ao consultar extrato no BD: {e}')
+    return []
+  finally:
+    cursor.close()
+    conexao.close()
+
+
 def inserir_lancamento(
     data_movimento,
     valor,
@@ -33,11 +60,13 @@ def inserir_lancamento(
     res_ext = cursor.fetchone()
     proximo_id_ext = (res_ext[0] or 0) + 1
 
-    # Define o PAGREC ('P' ou 'R') e o valor absoluto (NUMERIC 15,4)
+    # Define o PAGREC e o valor absoluto para a FLAN (mantém positivo)
     pag_rec = 'P' if valor < 0 else 'R'
     valor_absoluto = abs(valor) if valor < 0 else valor
-    # Tipo para extrato (Geralmente 'P' para pagamento/débito e 'R' para recebimento/crédito, ou similar)
     tipo_extrato = 'D' if valor < 0 else 'C'
+
+    # CORREÇÃO AQUI: Para a FEXTRATO, guardamos o valor com o sinal real (negativo para débito, positivo para crédito)
+    valor_fextrato = valor
 
     # --- PASSO A: INSERIR NA FLAN ---
     sql_flan = """
@@ -80,7 +109,8 @@ def inserir_lancamento(
     )
     cursor.execute(sql_flan, params_flan)
 
-    # --- PASSO B: INSERIR NA FEXTRATO (Espelho do extrato bancário) ---
+    # --- PASSO B: INSERIR NA FEXTRATO  ---
+    # Nota: salvamos valor_absoluto, mas o TIPO ('D' ou 'C') define se é saída ou entrada
     sql_extrato = """
             INSERT INTO FEXTRATO (
                 IDEXTRATO, CODEMPRESA, CODFILIAL, IDLAN, VALOR, 
@@ -95,7 +125,7 @@ def inserir_lancamento(
     params_extrato = (
         proximo_id_ext,
         proximo_id_lan,
-        valor_absoluto,
+        valor_fextrato,  # <-- Aqui vai com o sinal real (negativo para débito)
         str(historico)[:50],
         data_movimento,
         data_movimento,
@@ -106,7 +136,7 @@ def inserir_lancamento(
     )
     cursor.execute(sql_extrato, params_extrato)
 
-    # --- PASSO C: VINCULAR NA FEXTRATOLANC (Se a tabela exigir ponte) ---
+    # --- PASSO C: VINCULAR NA FEXTRATOLANC ---
     try:
       sql_ext_lanc = """
                 INSERT INTO FEXTRATOLANC (IDEXTRATO, IDLAN, CODEMPRESA) 
@@ -114,7 +144,7 @@ def inserir_lancamento(
             """
       cursor.execute(sql_ext_lanc, (proximo_id_ext, proximo_id_lan))
     except Exception:
-      pass  # Caso a tabela não seja obrigatória ou já faça parte, ignora sem quebrar
+      pass
 
     # Confirma tudo no banco
     conexao.commit()
@@ -122,31 +152,12 @@ def inserir_lancamento(
         f'[SUCESSO] Lançamento duplo inserido! IDLAN: {proximo_id_lan} |'
         f' IDEXTRATO: {proximo_id_ext} | Histórico: {historico}'
     )
+    return proximo_id_ext
 
   except Exception as e:
     conexao.rollback()
     print(f'[ERRO] Falha ao inserir lançamento unificado: {e}')
+    return None
   finally:
     cursor.close()
     conexao.close()
-
-
-# Bloco de execução do teste real unificado
-if __name__ == '__main__':
-  print('Iniciando teste unificado (FLAN + FEXTRATO)...')
-
-  data_teste = datetime.date.today()
-  valor_teste = Decimal('-25.50')  # Testando valor de tarifa
-  historico_teste = 'TESTE EXTRATO UNIFICADO'
-
-  inserir_lancamento(
-      data_movimento=data_teste,
-      valor=valor_teste,
-      historico=historico_teste,
-      cod_cfo='F00001',
-      cod_tdo='DP',
-      num_doc='999',
-      ccusto='1',
-      caixa='02',
-      cod_forma='01',
-  )
