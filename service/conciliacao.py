@@ -1,9 +1,37 @@
+from datetime import datetime
 from decimal import Decimal
-from bd import consultar_extrato_bd, inserir_lancamento, fdb
-from ofx import ler_ofx
+import fdb
 
 
-def buscar_regra_ofx(historico_ofx):
+def comparar_listas(extrato_ofx, extrato_bd):
+  ofx_pendentes = list(extrato_ofx)
+  bd_pendentes = list(extrato_bd)
+
+  extrato_conciliado = []
+  extrato_nao_conciliado = []
+
+  for item_ofx in extrato_ofx:
+    encontrado = False
+    for item_bd in bd_pendentes:
+      if (
+          item_ofx['data'] == item_bd['data']
+          and item_ofx['valor'] == item_bd['valor']
+      ):
+        extrato_conciliado.append({'ofx': item_ofx, 'bd': item_bd})
+        bd_pendentes.remove(item_bd)
+        encontrado = True
+        break
+
+    if not encontrado:
+      extrato_nao_conciliado.append({'origem': 'OFX', 'item': item_ofx})
+
+  for item_bd in bd_pendentes:
+    extrato_nao_conciliado.append({'origem': 'BD', 'item': item_bd})
+
+  return extrato_conciliado, extrato_nao_conciliado
+
+
+def inserir_itens(banco_esperado, extrato_nao_conciliado, extrato_conciliado):
   conexao = fdb.connect(
       dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
       user='SYSDBA',
@@ -13,127 +41,138 @@ def buscar_regra_ofx(historico_ofx):
   cursor = conexao.cursor()
 
   try:
-    cursor.execute("""
-            SELECT TERMO_BUSCA, CODEMPRESA, CODFILIAL, CODCAIXA, CODCFO, TIPO, CONCILIADO, COMPENSADO 
-            FROM TREGRAOFX
-        """)
+    cursor.execute(
+        'SELECT CODCFO, CCUSTO, HISTORICO, HISTORICO_BUSCA FROM TREGRAOFX'
+    )
     regras = cursor.fetchall()
 
-    for regra in regras:
-      termo_busca, empresa, filial, caixa, cfo, tipo, conciliado, compensado = (
-          regra
-      )
-      if termo_busca.upper() in historico_ofx.upper():
-        return {
-            'cod_empresa': empresa,
-            'cod_filial': filial,
-            'caixa': caixa,
-            'cod_cfo': cfo,
-            'tipo': tipo,
-        }
-    return None
+    itens_para_processar = list(extrato_nao_conciliado)
+
+    for item_nao_conc in itens_para_processar:
+      if item_nao_conc['origem'] != 'OFX':
+        continue
+
+      dados_item = item_nao_conc['item']
+      historico_item = str(dados_item['historico']).upper()
+
+      regra_encontrada = None
+      for regra in regras:
+        c_cfo, c_custo, hist_regra, hist_busca = regra
+        if hist_busca and hist_busca.upper() in historico_item:
+          regra_encontrada = {
+              'CODCFO': c_cfo,
+              'CCUSTO': c_custo,
+              'HISTORICO': hist_regra,
+          }
+          break
+
+      if regra_encontrada:
+        cursor.execute('SELECT MAX(IDLAN) FROM FLAN')
+        res_lan = cursor.fetchone()
+        novo_idlan = (res_lan[0] or 0) + 1
+
+        cursor.execute('SELECT MAX(IDEXTRATO) FROM FEXTRATO')
+        res_ext = cursor.fetchone()
+        novo_idextrato = (res_ext[0] or 0) + 1
+
+        valor_item = dados_item['valor']
+        pagrec = 'P' if valor_item < 0 else 'R'
+        codcaixa = '02' if str(banco_esperado) == '748' else '07'
+        valor_abs = abs(Decimal(str(valor_item)))
+        data_item = dados_item['data']
+        agora = datetime.now()
+
+        sql_flan = """
+                INSERT INTO FLAN (
+                    IDLAN, CODEMPRESA, CODFILIAL, CODCFO, CODTDO, NUMERODOCUMENTO, 
+                    PARCELA, PAGREC, CCUSTO, DATAVENCIMENTO, DATAEMISSAO, 
+                    DATABAIXA, DATAPREVBAIXA, HISTORICO, CODMOEVALORORIGINAL, 
+                    CODCAIXA, VALORORIGINAL, VALORBAIXADO, STATUSLAN, 
+                    DATADIGITACAO, NPARCELA, CODFORMA, HISTORICOBAIXA, DATADIGITACAOBAIXA
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        cursor.execute(
+            sql_flan,
+            (
+                novo_idlan,
+                1,
+                1,
+                regra_encontrada['CODCFO'],
+                'DP',
+                'AUTOS',
+                1,
+                pagrec,
+                regra_encontrada['CCUSTO'],
+                data_item,
+                data_item,
+                data_item,
+                data_item,
+                regra_encontrada['HISTORICO'],
+                'R$',
+                codcaixa,
+                valor_abs,
+                valor_abs,
+                'B',
+                agora,
+                1,
+                '01',
+                regra_encontrada['HISTORICO'],
+                agora,
+            ),
+        )
+
+        sql_fextrato = """
+                INSERT INTO FEXTRATO (
+                    IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, VALOR, IDLAN, 
+                    COMPENSADO, HISTORICO, NUMERODOCUMENTO, DATACOMPENSACAO, 
+                    DATA, DATADIGITACAO, CCUSTO, CODFORMA, DATAVENCIMENTO, 
+                    CODCFO, CONCILIADO, INTEGRADONFE
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        cursor.execute(
+            sql_fextrato,
+            (
+                novo_idextrato,
+                1,
+                1,
+                codcaixa,
+                valor_item,
+                novo_idlan,
+                'T',
+                regra_encontrada['HISTORICO'],
+                'AUTOS',
+                data_item,
+                data_item,
+                agora,
+                regra_encontrada['CCUSTO'],
+                '01',
+                data_item,
+                regra_encontrada['CODCFO'],
+                'F',
+                'F',
+            ),
+        )
+
+        conexao.commit()
+
+        extrato_nao_conciliado.remove(item_nao_conc)
+        extrato_conciliado.append({
+            'ofx': dados_item,
+            'bd': {
+                'data': data_item,
+                'valor': valor_item,
+                'historico': regra_encontrada['HISTORICO'],
+            },
+        })
+        print(
+            f"[REGRA APLICADA] Data: {data_item.strftime('%d/%m/%Y')} |"
+            f" '{dados_item['historico']}' -> Inserido no FLAN/FEXTRATO (IDLAN:"
+            f' {novo_idlan})'
+        )
+
   except Exception as e:
-    print(f'[ERRO] Falha ao consultar regras: {e}')
-    return None
+    conexao.rollback()
+    print(f'[ERRO] Falha ao processar regras: {e}')
   finally:
     cursor.close()
     conexao.close()
-
-
-def processar_conciliacao(caminho_ofx, caixa_alvo='02'):
-  print('1. Lendo arquivo OFX...')
-  transacoes_ofx = ler_ofx(caminho_ofx)
-
-  print('2. Consultando lançamentos já existentes no Banco de Dados...')
-  registros_bd = consultar_extrato_bd(caixa=caixa_alvo)
-
-  # Cria um conjunto de chaves únicas do que já está no banco: "YYYY-MM-DD|VALOR|HISTORICO"
-  chaves_bd = set()
-  for reg in registros_bd:
-    _, data_bd, valor_bd, hist_bd, _, tipo_bd = reg
-    data_str = str(data_bd)[:10]
-    val = Decimal(str(valor_bd))
-    if tipo_bd and str(tipo_bd).strip().upper() == 'D':
-      val = -abs(val)
-    # Normaliza o histórico para evitar divergências de espaços/truncamentos
-    hist_limpo = str(hist_bd).strip().upper() if hist_bd else ''
-    chaves_bd.add(f'{data_str}|{val}|{hist_limpo}')
-
-  conciliados = []
-  nao_conciliados = []
-
-  print('3. Cruzando transações do OFX com o Banco...')
-  for transacao in transacoes_ofx:
-    if isinstance(transacao, (list, tuple)):
-      data_ofx, valor_ofx, historico_ofx = transacao
-    else:
-      data_ofx = transacao['data']
-      valor_ofx = transacao['valor']
-      historico_ofx = transacao['historico']
-
-    data_str = str(data_ofx)[:10]
-    val_dec = Decimal(str(valor_ofx))
-    hist_limpo = str(historico_ofx).strip().upper()
-
-    chave_ofx = f'{data_str}|{val_dec}|{hist_limpo}'
-
-    item = {
-        'data': data_ofx,
-        'valor': val_dec,
-        'historico': historico_ofx,
-    }
-
-    if chave_ofx in chaves_bd:
-      conciliados.append(item)
-    else:
-      nao_conciliados.append(item)
-
-  print(f'\n[JÁ EXISTENTES NO BANCO] Total: {len(conciliados)}')
-
-  inseridos = 0
-  pendentes_manual = []
-
-  print('\n--- PROCESSANDO ITENS ÓRFÃOS ---')
-  for item in nao_conciliados:
-    regra = buscar_regra_ofx(item['historico'])
-
-    if regra:
-      res = inserir_lancamento(
-          data_movimento=item['data'],
-          valor=item['valor'],
-          historico=item['historico'],
-          cod_cfo=regra['cod_cfo'],
-          cod_tdo='DP',
-          num_doc='OFX',
-          ccusto='1',
-          caixa=regra['caixa'],
-          cod_forma='01',
-      )
-
-      if res:
-        inseridos += 1
-        print(
-            f"[AUTO-INSERIDO] Data: {item['data']} | Valor:"
-            f" R$ {item['valor']:,.2f} | Hist: {item['historico']}"
-        )
-      else:
-        pendentes_manual.append(item)
-    else:
-      pendentes_manual.append(item)
-
-  print(f'\n[PENDENTES PARA LANÇAMENTO MANUAL] Total: {len(pendentes_manual)}')
-  for item in pendentes_manual:
-    print(
-        f"  -> Data: {item['data']} | Valor: R$ {item['valor']:,.2f} | Hist:"
-        f" {item['historico']}"
-    )
-
-  print('\n--- RESUMO FINAL ---')
-  print(f'Já existentes no banco: {len(conciliados)}')
-  print(f'Inseridos automaticamente: {inseridos}')
-  print(f'Pendentes de lançamento manual: {len(pendentes_manual)}')
-
-
-if __name__ == '__main__':
-  caminho_teste = r'C:\Users\rondo\Dropbox\JUNIOR\PYTHON\PROJETOS\CONCILIACAO BANCARIA\bd_firebird\teste_regras.ofx'
-  processar_conciliacao(caminho_teste, caixa_alvo='02')
