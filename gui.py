@@ -1,7 +1,7 @@
 from datetime import datetime
 import sys
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from service.bd import (
     consultar_extrato,
@@ -11,6 +11,7 @@ from service.bd import (
     saldo_sistema,
 )
 from service.conciliacao import comparar_listas, inserir_itens
+from service.config import carregar_config, salvar_config
 from service.ofx import ler_ofx, saldo_final
 
 ctk.set_appearance_mode("System")
@@ -34,7 +35,6 @@ class JanelaGerenciarRegras(ctk.CTkToplevel):
     )
     lbl.pack(pady=15)
 
-    # Frame de Formulário para Inclusão
     form_frame = ctk.CTkFrame(self)
     form_frame.pack(pady=5, padx=20, fill="x")
 
@@ -71,7 +71,6 @@ class JanelaGerenciarRegras(ctk.CTkToplevel):
     )
     btn_salvar.grid(row=3, column=1, columnspan=2, pady=10)
 
-    # Lista/Caixa de exibição numerada das regras atuais
     ctk.CTkLabel(
         self, text="Regras Ativas (com ID de Exclusão):", font=("Arial", 14, "bold")
     ).pack(anchor="w", padx=20, pady=(15, 5))
@@ -81,7 +80,6 @@ class JanelaGerenciarRegras(ctk.CTkToplevel):
     )
     self.lista_texto.pack(padx=20, pady=5)
 
-    # Frame para exclusão baseada no ID/Número da linha
     del_frame = ctk.CTkFrame(self)
     del_frame.pack(pady=10, padx=20, fill="x")
 
@@ -177,15 +175,16 @@ class AppConciliacao(ctk.CTk):
     super().__init__()
 
     self.title("Sistema de Conciliação Bancária")
-    self.geometry("750x720")
+    self.geometry("750x680")
     self.resizable(False, False)
 
-    self.caminho_extrato = r"C:\Users\rondo\Dropbox\JUNIOR\PYTHON\PROJETOS\CONCILIACAO_BANCARIA\bd_firebird\extrato.ofx"
+    # Carrega as configurações salvas (ou padrões)
+    self.config = carregar_config()
 
     self.label_titulo = ctk.CTkLabel(
         self, text="Conciliação Bancária TGA", font=("Arial", 22, "bold")
     )
-    self.label_titulo.pack(pady=15)
+    self.label_titulo.pack(pady=10)
 
     self.btn_regras = ctk.CTkButton(
         self,
@@ -197,15 +196,47 @@ class AppConciliacao(ctk.CTk):
         height=30,
         width=200,
     )
-    self.btn_regras.pack(pady=5)
+    self.btn_regras.pack(pady=2)
 
+    # --- FRAME DE CONFIGURAÇÃO DE CAMINHOS ---
+    self.frame_paths = ctk.CTkFrame(self)
+    self.frame_paths.pack(pady=8, padx=20, fill="x")
+
+    # Arquivo OFX
+    ctk.CTkLabel(
+        self.frame_paths, text="Arquivo OFX:", font=("Arial", 11, "bold")
+    ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    self.entry_ofx = ctk.CTkEntry(self.frame_paths, width=480)
+    self.entry_ofx.insert(0, self.config["caminho_ofx"])
+    self.entry_ofx.grid(row=0, column=1, padx=5, pady=5)
+    btn_procurar_ofx = ctk.CTkButton(
+        self.frame_paths,
+        text="Procurar",
+        width=80,
+        command=self.procurar_ofx,
+    )
+    btn_procurar_ofx.grid(row=0, column=2, padx=5, pady=5)
+
+    # Arquivo Banco de Dados (.fdb)
+    ctk.CTkLabel(
+        self.frame_paths, text="Banco Firebird:", font=("Arial", 11, "bold")
+    ).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+    self.entry_bd = ctk.CTkEntry(self.frame_paths, width=480)
+    self.entry_bd.insert(0, self.config["caminho_bd"])
+    self.entry_bd.grid(row=1, column=1, padx=5, pady=5)
+    btn_procurar_bd = ctk.CTkButton(
+        self.frame_paths, text="Procurar", width=80, command=self.procurar_bd
+    )
+    btn_procurar_bd.grid(row=1, column=2, padx=5, pady=5)
+
+    # --- FRAME DE SELEÇÃO DE BANCO ---
     self.frame_banco = ctk.CTkFrame(self)
-    self.frame_banco.pack(pady=10, padx=20, fill="x")
+    self.frame_banco.pack(pady=8, padx=20, fill="x")
 
     self.label_escolha = ctk.CTkLabel(
         self.frame_banco, text="Selecione o Banco:", font=("Arial", 14)
     )
-    self.label_escolha.pack(side="left", padx=15, pady=15)
+    self.label_escolha.pack(side="left", padx=15, pady=12)
 
     self.banco_var = ctk.IntVar(value=748)
 
@@ -236,17 +267,45 @@ class AppConciliacao(ctk.CTk):
         hover_color="#218838",
         height=40,
     )
-    self.btn_executar.pack(pady=15, padx=20, fill="x")
+    self.btn_executar.pack(pady=10, padx=20, fill="x")
 
     self.caixa_texto = ctk.CTkTextbox(
         self, font=("Consolas", 12), width=700, height=310
     )
-    self.caixa_texto.pack(pady=10, padx=20)
+    self.caixa_texto.pack(pady=5, padx=20)
     self.caixa_texto.insert(
         "0.0",
-        "Sistema pronto. Selecione o banco acima e clique em 'Executar"
+        "Sistema pronto. Verifique os caminhos acima e clique em 'Executar"
         " Conciliação'.\n",
     )
+
+  def procurar_ofx(self):
+    arquivo = filedialog.askopenfilename(
+        title="Selecione o arquivo OFX",
+        filetypes=[("Arquivos OFX", "*.ofx"), ("Todos os arquivos", "*.*")],
+    )
+    if arquivo:
+      self.entry_ofx.delete(0, "end")
+      self.entry_ofx.insert(0, arquivo)
+      self.salvar_alteracoes_config()
+
+  def procurar_bd(self):
+    arquivo = filedialog.askopenfilename(
+        title="Selecione o Banco de Dados Firebird",
+        filetypes=[
+            ("Arquivos Firebird", "*.fdb"),
+            ("Todos os arquivos", "*.*"),
+        ],
+    )
+    if arquivo:
+      self.entry_bd.delete(0, "end")
+      self.entry_bd.insert(0, arquivo)
+      self.salvar_alteracoes_config()
+
+  def salvar_alteracoes_config(self):
+    caminho_ofx = self.entry_ofx.get().strip()
+    caminho_bd = self.entry_bd.get().strip()
+    salvar_config(caminho_ofx, caminho_bd)
 
   def abrir_tela_regras(self):
     JanelaGerenciarRegras(self)
@@ -256,23 +315,28 @@ class AppConciliacao(ctk.CTk):
     self.caixa_texto.see("end")
 
   def rodar_conciliacao(self):
+    # Garante que qualquer alteração manual nos campos de texto seja salva
+    self.salvar_alteracoes_config()
+
     banco_esperado = self.banco_var.get()
     nome_banco = "Sicredi" if banco_esperado == 748 else "Sicoob"
+    caminho_extrato = self.entry_ofx.get().strip()
+    caminho_banco = self.entry_bd.get().strip()
 
     self.caixa_texto.delete("0.0", "end")
     self.log(f"Processando conciliação para o {nome_banco} (Banco: {banco_esperado})...\n")
     self.update()
 
     try:
-      lista_ofx = ler_ofx(banco_esperado, self.caminho_extrato)
+      lista_ofx = ler_ofx(banco_esperado, caminho_extrato)
       if not lista_ofx:
         self.log(
             "[AVISO] Nenhum lançamento encontrado no OFX ou falha na leitura."
         )
         return
 
-      lista_bd = consultar_extrato(banco_esperado, self.caminho_extrato)
-      saldo_banco = saldo_final(banco_esperado, self.caminho_extrato)
+      lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
+      saldo_banco = saldo_final(banco_esperado, caminho_extrato)
 
       conciliados, nao_conciliados = comparar_listas(lista_ofx, lista_bd)
 
@@ -300,7 +364,7 @@ class AppConciliacao(ctk.CTk):
         inserir_itens(banco_esperado, nao_conciliados, conciliados)
         sys.stdout = sys.__stdout__
 
-      total_sistema = saldo_sistema(banco_esperado)
+      total_sistema = saldo_sistema(banco_esperado, caminho_banco)
 
       self.log("\n" + "=" * 45)
       self.log(f"       RESULTADO FINAL - {nome_banco.upper()}")

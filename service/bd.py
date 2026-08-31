@@ -3,9 +3,14 @@ import fdb
 from .ofx import data_final, data_inicial
 
 
-def consultar_extrato(banco_esperado, caminho):
-  dt_inicio = data_inicial(banco_esperado, caminho)
-  dt_fim = data_final(banco_esperado, caminho)
+from decimal import Decimal
+import fdb
+from .ofx import data_final, data_inicial
+
+
+def consultar_extrato(banco_esperado, caminho_ofx, caminho_bd):
+  dt_inicio = data_inicial(banco_esperado, caminho_ofx)
+  dt_fim = data_final(banco_esperado, caminho_ofx)
 
   if not dt_inicio or not dt_fim:
     print(
@@ -14,7 +19,7 @@ def consultar_extrato(banco_esperado, caminho):
     return []
 
   conexao = fdb.connect(
-      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      dsn=caminho_bd,
       user='SYSDBA',
       password='masterkey',
       charset='ISO8859_1',
@@ -49,10 +54,10 @@ def consultar_extrato(banco_esperado, caminho):
     conexao.close()
 
 
-def saldo_sistema(banco_esperado):
+def saldo_sistema(banco_esperado, caminho_bd):
   codcaixa = '02' if str(banco_esperado) == '748' else '07'
   conexao = fdb.connect(
-      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      dsn=caminho_bd,
       user='SYSDBA',
       password='masterkey',
       charset='ISO8859_1',
