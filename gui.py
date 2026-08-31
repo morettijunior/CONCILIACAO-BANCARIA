@@ -1,14 +1,174 @@
 from datetime import datetime
 import sys
 import tkinter as tk
+from tkinter import messagebox
 import customtkinter as ctk
-from service.bd import consultar_extrato, saldo_sistema
+from service.bd import (
+    consultar_extrato,
+    excluir_regra,
+    inserir_regra,
+    listar_regras,
+    saldo_sistema,
+)
 from service.conciliacao import comparar_listas, inserir_itens
 from service.ofx import ler_ofx, saldo_final
 
-# Configuração inicial do tema da janela
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
+
+
+class JanelaGerenciarRegras(ctk.CTkToplevel):
+  """Janela secundária para gerenciar as regras de OFX"""
+
+  def __init__(self, parent):
+    super().__init__(parent)
+    self.title("Gerenciamento de Regras OFX")
+    self.geometry("680x580")
+    self.resizable(False, False)
+
+    self.transient(parent)
+    self.grab_set()
+
+    lbl = ctk.CTkLabel(
+        self, text="Cadastro e Manutenção de Regras", font=("Arial", 18, "bold")
+    )
+    lbl.pack(pady=15)
+
+    # Frame de Formulário para Inclusão
+    form_frame = ctk.CTkFrame(self)
+    form_frame.pack(pady=5, padx=20, fill="x")
+
+    ctk.CTkLabel(form_frame, text="Cód. CFO:").grid(
+        row=0, column=0, padx=5, pady=5, sticky="w"
+    )
+    self.entry_cfo = ctk.CTkEntry(form_frame, width=120)
+    self.entry_cfo.grid(row=0, column=1, padx=5, pady=5)
+
+    ctk.CTkLabel(form_frame, text="C. Custo:").grid(
+        row=0, column=2, padx=5, pady=5, sticky="w"
+    )
+    self.entry_ccusto = ctk.CTkEntry(form_frame, width=120)
+    self.entry_ccusto.grid(row=0, column=3, padx=5, pady=5)
+
+    ctk.CTkLabel(form_frame, text="Histórico Padrão:").grid(
+        row=1, column=0, padx=5, pady=5, sticky="w"
+    )
+    self.entry_hist = ctk.CTkEntry(form_frame, width=350)
+    self.entry_hist.grid(row=1, column=1, columnspan=3, padx=5, pady=5)
+
+    ctk.CTkLabel(form_frame, text="Texto de Busca (OFX):").grid(
+        row=2, column=0, padx=5, pady=5, sticky="w"
+    )
+    self.entry_busca = ctk.CTkEntry(form_frame, width=350)
+    self.entry_busca.grid(row=2, column=1, columnspan=3, padx=5, pady=5)
+
+    btn_salvar = ctk.CTkButton(
+        form_frame,
+        text="Inserir Nova Regra",
+        command=self.salvar_regra,
+        fg_color="#28a745",
+        hover_color="#218838",
+    )
+    btn_salvar.grid(row=3, column=1, columnspan=2, pady=10)
+
+    # Lista/Caixa de exibição numerada das regras atuais
+    ctk.CTkLabel(
+        self, text="Regras Ativas (com ID de Exclusão):", font=("Arial", 14, "bold")
+    ).pack(anchor="w", padx=20, pady=(15, 5))
+
+    self.lista_texto = ctk.CTkTextbox(
+        self, font=("Consolas", 11), width=630, height=180
+    )
+    self.lista_texto.pack(padx=20, pady=5)
+
+    # Frame para exclusão baseada no ID/Número da linha
+    del_frame = ctk.CTkFrame(self)
+    del_frame.pack(pady=10, padx=20, fill="x")
+
+    ctk.CTkLabel(del_frame, text="Digite o ID/Número da regra para excluir:").pack(
+        side="left", padx=5
+    )
+    self.entry_del_id = ctk.CTkEntry(del_frame, width=80)
+    self.entry_del_id.pack(side="left", padx=5)
+
+    btn_excluir = ctk.CTkButton(
+        del_frame,
+        text="Excluir por ID",
+        command=self.remover_regra,
+        fg_color="#dc3545",
+        hover_color="#c82333",
+    )
+    btn_excluir.pack(side="left", padx=10)
+
+    self.regras_cache = []
+    self.atualizar_lista()
+
+  def atualizar_lista(self):
+    self.lista_texto.delete("0.0", "end")
+    self.regras_cache = listar_regras()
+
+    if not self.regras_cache:
+      self.lista_texto.insert("0.0", "Nenhuma regra cadastrada.\n")
+      return
+
+    for idx, r in enumerate(self.regras_cache, start=1):
+      cfo, cc, hist, busca = r
+      linha = f"[{idx}] CFO: {cfo} | CC: {cc} | Busca: {busca} -> Hist: {hist}\n"
+      self.lista_texto.insert("end", linha)
+
+  def salvar_regra(self):
+    cfo = self.entry_cfo.get()
+    cc = self.entry_ccusto.get()
+    hist = self.entry_hist.get()
+    busca = self.entry_busca.get()
+
+    if not cfo or not cc or not hist or not busca:
+      messagebox.showwarning(
+          "Atenção", "Todos os campos devem ser preenchidos!"
+      )
+      return
+
+    sucesso = inserir_regra(cfo, cc, hist, busca)
+    if sucesso:
+      messagebox.showinfo("Sucesso", "Regra inserida com sucesso!")
+      self.entry_cfo.delete(0, "end")
+      self.entry_ccusto.delete(0, "end")
+      self.entry_hist.delete(0, "end")
+      self.entry_busca.delete(0, "end")
+      self.atualizar_lista()
+    else:
+      messagebox.showerror(
+          "Erro", "Falha ao inserir regra. Verifique o console."
+      )
+
+  def remover_regra(self):
+    digitado = self.entry_del_id.get().strip()
+    if not digitado.isdigit():
+      messagebox.showwarning(
+          "Atenção", "Digite um número de ID válido listado na tela."
+      )
+      return
+
+    indice = int(digitado) - 1
+
+    if indice < 0 or indice >= len(self.regras_cache):
+      messagebox.showerror("Erro", "ID informado não existe na listagem.")
+      return
+
+    regra_selecionada = self.regras_cache[indice]
+    busca_alvo = regra_selecionada[3]
+
+    if messagebox.askyesno(
+        "Confirmar Exclusão",
+        f"Deseja realmente excluir a regra ID [{digitado}] (Busca: {busca_alvo})?",
+    ):
+      sucesso = excluir_regra(busca_alvo)
+      if sucesso:
+        messagebox.showinfo("Sucesso", "Regra excluída com sucesso!")
+        self.entry_del_id.delete(0, "end")
+        self.atualizar_lista()
+      else:
+        messagebox.showerror("Erro", "Falha ao excluir regra no banco de dados.")
 
 
 class AppConciliacao(ctk.CTk):
@@ -17,7 +177,7 @@ class AppConciliacao(ctk.CTk):
     super().__init__()
 
     self.title("Sistema de Conciliação Bancária")
-    self.geometry("750x680")
+    self.geometry("750x720")
     self.resizable(False, False)
 
     self.caminho_extrato = r"C:\Users\rondo\Dropbox\JUNIOR\PYTHON\PROJETOS\CONCILIACAO_BANCARIA\bd_firebird\extrato.ofx"
@@ -25,7 +185,19 @@ class AppConciliacao(ctk.CTk):
     self.label_titulo = ctk.CTkLabel(
         self, text="Conciliação Bancária TGA", font=("Arial", 22, "bold")
     )
-    self.label_titulo.pack(pady=20)
+    self.label_titulo.pack(pady=15)
+
+    self.btn_regras = ctk.CTkButton(
+        self,
+        text="⚙ Gerenciar Regras OFX",
+        command=self.abrir_tela_regras,
+        font=("Arial", 13, "bold"),
+        fg_color="#6c757d",
+        hover_color="#5a6268",
+        height=30,
+        width=200,
+    )
+    self.btn_regras.pack(pady=5)
 
     self.frame_banco = ctk.CTkFrame(self)
     self.frame_banco.pack(pady=10, padx=20, fill="x")
@@ -67,7 +239,7 @@ class AppConciliacao(ctk.CTk):
     self.btn_executar.pack(pady=15, padx=20, fill="x")
 
     self.caixa_texto = ctk.CTkTextbox(
-        self, font=("Consolas", 12), width=700, height=330
+        self, font=("Consolas", 12), width=700, height=310
     )
     self.caixa_texto.pack(pady=10, padx=20)
     self.caixa_texto.insert(
@@ -75,6 +247,9 @@ class AppConciliacao(ctk.CTk):
         "Sistema pronto. Selecione o banco acima e clique em 'Executar"
         " Conciliação'.\n",
     )
+
+  def abrir_tela_regras(self):
+    JanelaGerenciarRegras(self)
 
   def log(self, mensagem):
     self.caixa_texto.insert("end", mensagem + "\n")

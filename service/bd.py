@@ -70,3 +70,75 @@ def saldo_sistema(banco_esperado):
   finally:
     cursor.close()
     conexao.close()
+
+def listar_regras():
+  """Retorna todas as regras cadastradas na tabela TREGRAOFX."""
+  conexao = fdb.connect(
+      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      user='SYSDBA',
+      password='masterkey',
+      charset='ISO8859_1',
+  )
+  cursor = conexao.cursor()
+  try:
+    cursor.execute(
+        'SELECT CODCFO, CCUSTO, HISTORICO, HISTORICO_BUSCA FROM TREGRAOFX'
+    )
+    return cursor.fetchall()
+  except Exception as e:
+    print(f'[ERRO] Falha ao listar regras: {e}')
+    return []
+  finally:
+    cursor.close()
+    conexao.close()
+
+
+def inserir_regra(codcfo, ccusto, historico, historico_busca):
+  """Insere uma nova regra no banco."""
+  conexao = fdb.connect(
+      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      user='SYSDBA',
+      password='masterkey',
+      charset='ISO8859_1',
+  )
+  cursor = conexao.cursor()
+  try:
+    sql = """
+            INSERT INTO TREGRAOFX (CODCFO, CCUSTO, HISTORICO, HISTORICO_BUSCA)
+            VALUES (?, ?, ?, ?)
+        """
+    cursor.execute(
+        sql, (codcfo.strip(), ccusto.strip(), historico.strip(), historico_busca.strip().upper())
+    )
+    conexao.commit()
+    return True
+  except Exception as e:
+    conexao.rollback()
+    print(f'[ERRO] Falha ao inserir regra: {e}')
+    return False
+  finally:
+    cursor.close()
+    conexao.close()
+
+
+def excluir_regra(historico_busca):
+  """Exclui uma regra com base no histórico de busca."""
+  conexao = fdb.connect(
+      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
+      user='SYSDBA',
+      password='masterkey',
+      charset='ISO8859_1',
+  )
+  cursor = conexao.cursor()
+  try:
+    sql = 'DELETE FROM TREGRAOFX WHERE HISTORICO_BUSCA = ?'
+    cursor.execute(sql, (historico_busca.strip().upper(),))
+    conexao.commit()
+    return True
+  except Exception as e:
+    conexao.rollback()
+    print(f'[ERRO] Falha ao excluir regra: {e}')
+    return False
+  finally:
+    cursor.close()
+    conexao.close()
