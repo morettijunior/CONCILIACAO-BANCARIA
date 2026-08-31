@@ -44,7 +44,6 @@ def main():
 
     lista_bd = consultar_extrato(banco_esperado, caminho_extrato)
     saldo_banco = saldo_final(banco_esperado, caminho_extrato)
-    total_sistema = saldo_sistema(banco_esperado)
 
     # 2. Comparação inicial
     conciliados, nao_conciliados = comparar_listas(lista_ofx, lista_bd)
@@ -72,6 +71,23 @@ def main():
       print(f'Saldo Final do Extrato (OFX): R$ {saldo_banco:,.2f}')
     print(f'Saldo Final do Sistema (BD): R$ {total_sistema:,.2f}')
     print('=' * 40)
+
+    # 5. Listagem detalhada dos itens pendentes de conciliação manual
+    if nao_conciliados:
+      print('\n--- ITENS PENDENTES DE CONCILIAÇÃO MANUAL ---')
+      for item in nao_conciliados:
+        origem = item['origem']
+        reg = item['item']
+        data_formatada = (
+            reg['data'].strftime('%d/%m/%Y')
+            if hasattr(reg['data'], 'strftime')
+            else reg['data']
+        )
+        print(
+            f"[{origem}] Data: {data_formatada} | Valor: R$ {reg['valor']:,.2f} |"
+            f" Histórico: {reg['historico']}"
+        )
+      print('-' * 45)
 
     input('\nPressione ENTER para voltar ao menu principal...')
 
