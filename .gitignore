@@ -1,6 +1,8 @@
+.vscode
 .venv/
 __pycache__/
 *.pyc
 .env
-bd_firebird/
 *teste
+dist/
+build/

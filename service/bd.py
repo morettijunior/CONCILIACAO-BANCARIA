@@ -54,27 +54,54 @@ def consultar_extrato(banco_esperado, caminho_ofx, caminho_bd):
     conexao.close()
 
 
-def saldo_sistema(banco_esperado, caminho_bd):
-  codcaixa = '02' if str(banco_esperado) == '748' else '07'
+from decimal import Decimal
+import fdb
+
+
+def saldo_sistema(banco_esperado, caminho_bd, data_final=None):
+  """Calcula o saldo somando a coluna VALOR da tabela FEXTRATO
+
+  filtrando pelo CODCAIXA e opcionalmente limitando até a DATA FINAL.
+  """
+  codcaixa = "02" if str(banco_esperado) == "748" else "07"
+
   conexao = fdb.connect(
       dsn=caminho_bd,
-      user='SYSDBA',
-      password='masterkey',
-      charset='ISO8859_1',
+      user="SYSDBA",
+      password="masterkey",
+      charset="ISO8859_1",
   )
   cursor = conexao.cursor()
+
+  total_saldo = Decimal("0.00")
   try:
-    sql = 'SELECT SUM(VALOR) FROM FEXTRATO WHERE CODCAIXA = ?'
-    cursor.execute(sql, (codcaixa,))
-    resultado = cursor.fetchone()
-    total = resultado[0] if resultado and resultado[0] is not None else 0
-    return Decimal(str(total))
+    if data_final:
+      sql = """
+                SELECT SUM(VALOR) 
+                FROM FEXTRATO 
+                WHERE CODCAIXA = ? AND DATA <= ?
+            """
+      cursor.execute(sql, (codcaixa, data_final))
+    else:
+      sql = """
+                SELECT SUM(VALOR) 
+                FROM FEXTRATO 
+                WHERE CODCAIXA = ?
+            """
+      cursor.execute(sql, (codcaixa,))
+
+    res = cursor.fetchone()
+
+    if res and res[0] is not None:
+      total_saldo = Decimal(str(res[0]))
+
   except Exception as e:
-    print(f'[ERRO] Falha ao calcular o saldo do sistema: {e}')
-    return Decimal('0.00')
+    print(f"[ERRO BD] Falha ao calcular saldo do sistema: {e}")
   finally:
     cursor.close()
     conexao.close()
+
+  return total_saldo
 
 def listar_regras():
   """Retorna todas as regras cadastradas na tabela TREGRAOFX."""

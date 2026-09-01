@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -324,7 +325,10 @@ class AppConciliacao(ctk.CTk):
     caminho_banco = self.entry_bd.get().strip()
 
     self.caixa_texto.delete("0.0", "end")
-    self.log(f"Processando conciliação para o {nome_banco} (Banco: {banco_esperado})...\n")
+    self.log(
+        f"Processando conciliação para o {nome_banco} (Banco:"
+        f" {banco_esperado})...\n"
+    )
     self.update()
 
     try:
@@ -338,15 +342,35 @@ class AppConciliacao(ctk.CTk):
       lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
       saldo_banco = saldo_final(banco_esperado, caminho_extrato)
 
-      conciliados, nao_conciliados = comparar_listas(lista_ofx, lista_bd)
+      # Recebe as 6 listas separadas por blocos
+      (
+          cartoes_conc,
+          cartoes_nao_conc,
+          boletos_conc,
+          boletos_nao_conc,
+          outros_conc,
+          outros_nao_conc,
+      ) = comparar_listas(lista_ofx, lista_bd)
+
+      total_conciliados = (
+          len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
+      )
+      total_nao_conciliados = (
+          len(cartoes_nao_conc) + len(boletos_nao_conc) + len(outros_nao_conc)
+      )
 
       self.log(f"-> Total de registros no OFX: {len(lista_ofx)}")
       self.log(f"-> Total de registros no BD: {len(lista_bd)}")
-      self.log(f"-> Já conciliados: {len(conciliados)}")
-      self.log(f"-> Não conciliados (antes das regras): {len(nao_conciliados)}")
+      self.log(f"-> Já conciliados (Total): {total_conciliados}")
+      self.log(
+          f"-> Não conciliados (antes das regras): {total_nao_conciliados}"
+      )
 
-      if nao_conciliados:
-        self.log("\nAplicando regras automáticas aos itens não conciliados...")
+      if total_nao_conciliados > 0:
+        self.log(
+            "\nAplicando regras automáticas aos itens não conciliados por"
+            " bloco..."
+        )
 
         class RedirecionadorPrint:
 
@@ -361,36 +385,109 @@ class AppConciliacao(ctk.CTk):
             pass
 
         sys.stdout = RedirecionadorPrint(self.log)
-        inserir_itens(banco_esperado, nao_conciliados, conciliados)
+        # Passa o caminho do BD do servidor e as 6 listas para o processador de regras
+        inserir_itens(
+            banco_esperado,
+            caminho_banco,
+            cartoes_nao_conc,
+            boletos_nao_conc,
+            outros_nao_conc,
+            cartoes_conc,
+            boletos_conc,
+            outros_conc,
+        )
         sys.stdout = sys.__stdout__
 
-      total_sistema = saldo_sistema(banco_esperado, caminho_banco)
+      # Descobre a data final com base no último item do OFX carregado para filtrar o saldo corretamente
+      data_limite_ofx = None
+      if lista_ofx:
+        data_limite_ofx = lista_ofx[-1]["data"]
+
+      # Pega o saldo final do sistema na tabela FEXTRATO filtrando até a data limite do OFX
+      total_sistema = saldo_sistema(
+          banco_esperado, caminho_banco, data_limite_ofx
+      )
+
+      total_conciliados_final = (
+          len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
+      )
+
+      # Filtra apenas as pendências geradas pelo OFX para a listagem
+      pendentes_ofx_cartoes = [
+          x for x in cartoes_nao_conc if x["origem"] == "OFX"
+      ]
+      pendentes_ofx_boletos = [
+          x for x in boletos_nao_conc if x["origem"] == "OFX"
+      ]
+      pendentes_ofx_outros = [x for x in outros_nao_conc if x["origem"] == "OFX"]
+
+      total_pendentes_ofx = (
+          len(pendentes_ofx_cartoes)
+          + len(pendentes_ofx_boletos)
+          + len(pendentes_ofx_outros)
+      )
 
       self.log("\n" + "=" * 45)
       self.log(f"       RESULTADO FINAL - {nome_banco.upper()}")
       self.log("=" * 45)
-      self.log(f"Total Conciliados (Final): {len(conciliados)}")
-      self.log(f"Total Não Conciliados (Pendentes): {len(nao_conciliados)}")
-      if saldo_banco is not None:
-        self.log(f"Saldo Final do Extrato (OFX): R$ {saldo_banco:,.2f}")
-      self.log(f"Saldo Final do Sistema (BD): R$ {total_sistema:,.2f}")
+      self.log(f"Total Conciliados (Final): {total_conciliados_final}")
+      self.log(f"  - Cartões: {len(cartoes_conc)}")
+      self.log(f"  - Boletos: {len(boletos_conc)}")
+      self.log(f"  - Outros:  {len(outros_conc)}")
+      self.log(f"Total Pendentes do OFX: {total_pendentes_ofx}")
+      self.log(f"  - Cartões Pendentes: {len(pendentes_ofx_cartoes)}")
+      self.log(f"  - Boletos Pendentes: {len(pendentes_ofx_boletos)}")
+      self.log(f"  - Outros Pendentes:  {len(pendentes_ofx_outros)}")
+      self.log("-" * 45)
+
+      # Exibição dos saldos para comparação
+      val_saldo_ofx = saldo_banco if saldo_banco is not None else Decimal("0.00")
+      val_saldo_sis = (
+          total_sistema if total_sistema is not None else Decimal("0.00")
+      )
+
+      self.log(f"Saldo Final do Extrato (OFX): R$ {val_saldo_ofx:,.2f}")
+      self.log(f"Saldo Final do Sistema (FEXTRATO): R$ {val_saldo_sis:,.2f}")
       self.log("=" * 45)
 
-      if nao_conciliados:
-        self.log("\n--- ITENS PENDENTES DE CONCILIAÇÃO MANUAL ---")
-        for item in nao_conciliados:
-          origem = item["origem"]
-          reg = item["item"]
-          data_formatada = (
-              reg["data"].strftime("%d/%m/%Y")
-              if hasattr(reg["data"], "strftime")
-              else reg["data"]
-          )
-          self.log(
-              f"[{origem}] Data: {data_formatada} | Valor: R$"
-              f" {reg['valor']:,.2f} | Histórico: {reg['historico']}"
-          )
+      # Impressão de pendências restritas ao OFX
+      if total_pendentes_ofx > 0:
+        self.log(
+            "\n--- ITENS PENDENTES DO OFX (NÃO ENCONTRADOS NO SISTEMA) ---"
+        )
+        todas_pendencias_ofx = [
+            ("CARTÕES", pendentes_ofx_cartoes),
+            ("BOLETOS", pendentes_ofx_boletos),
+            ("OUTROS", pendentes_ofx_outros),
+        ]
+        for nome_bloco, lista_bloco in todas_pendencias_ofx:
+          if lista_bloco:
+            self.log(f"\n[BLOCO: {nome_bloco}]")
+            for item in lista_bloco:
+              reg = item["item"]
+              data_formatada = (
+                  reg["data"].strftime("%d/%m/%Y")
+                  if hasattr(reg["data"], "strftime")
+                  else reg["data"]
+              )
+              self.log(
+                  f"  [OFX] Data: {data_formatada} | Valor: R$"
+                  f" {reg['valor']:,.2f} | Histórico: {reg['historico']}"
+              )
         self.log("-" * 45)
+
+      # Validação do status de conciliação e saldos
+      saldos_batem = abs(val_saldo_ofx - val_saldo_sis) < Decimal("0.01")
+
+      self.log("\n")
+      if total_pendentes_ofx == 0 and saldos_batem:
+        self.log("★" * 45)
+        self.log("         BANCO CONCILIADO         ")
+        self.log("★" * 45)
+      else:
+        self.log("✖" * 45)
+        self.log("        BANCO NÃO CONCILIADO       ")
+        self.log("✖" * 45)
 
       self.log("\nProcesso concluído com sucesso!")
 

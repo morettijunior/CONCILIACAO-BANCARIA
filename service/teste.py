@@ -1,49 +1,91 @@
+from datetime import datetime
+from decimal import Decimal
 import fdb
 
+# Ajuste aqui se o caminho do banco no seu config for diferente
+CAMINHO_BD = r"SERVIDOR:C:\tga\Dados\TGA.FDB"
 
-def ajustar_ccusto_e_inserir_regras():
-  conexao = fdb.connect(
-      dsn=r'C:\Users\rondo\Desktop\Phyton\BD FIREBIRD\tga.fdb',
-      user='SYSDBA',
-      password='masterkey',
-      charset='ISO8859_1',
+
+def testar_extrato_banco():
+  print("=" * 60)
+  print(" SCRIPT DE DIAGNÓSTICO DE SALDO - FEXTRATO (ATÉ 31/08)")
+  print("=" * 60)
+
+  banco = int(
+      input("Digite o código do banco para testar (748 ou 756): ").strip()
   )
-  cursor = conexao.cursor()
+  codcaixa = "02" if banco == 748 else "07"
+  nome_banco = "Sicredi" if banco == 748 else "Sicoob"
+
+  # Definindo a data limite como 31/08/2026
+  data_limite = datetime(2026, 8, 31).date()
+
+  print(
+      f"\nConectando ao banco para o {nome_banco} (Caixa: {codcaixa}) até"
+      f" {data_limite.strftime('%d/%m/%Y')}..."
+  )
 
   try:
-    print('Alterando o tamanho da coluna CCUSTO para VARCHAR(20)...')
-    cursor.execute('ALTER TABLE TREGRAOFX ALTER COLUMN CCUSTO TYPE VARCHAR(20)')
-    conexao.commit()
-    print('Coluna CCUSTO alterada com sucesso!')
+    conexao = fdb.connect(
+        dsn=CAMINHO_BD,
+        user="SYSDBA",
+        password="masterkey",
+        charset="ISO8859_1",
+    )
+    cursor = conexao.cursor()
 
-  except Exception as e:
-    conexao.rollback()
-    print(f'[AVISO] Erro ao alterar CCUSTO: {e}')
-
-  regras = [
-      ('C01737', '3.12.002', 'PGTO TAXA IOF', 'IOF'),
-      ('C01737', '3.12.003', 'PGTO JUROS LIMITE CHEQUE ESPECIAL', 'CH.ESP'),
-      ('C01737', '3.12.010', 'INTEGRACAO CAPITAL SICREDI', 'CAPITAL SUBSCRITO'),
-      ('C01737', '3.12.008', 'PGTO MENSALIDADE SICREDI', 'CESTA DE RELACIONAMENTO'),
-      ('C01737', '3.12.001', 'TARIFA PIX SICREDI', 'TARIFA PIX'),
-  ]
-
-  try:
-    sql = """
-            INSERT INTO TREGRAOFX (CODCFO, CCUSTO, HISTORICO, HISTORICO_BUSCA)
-            VALUES (?, ?, ?, ?)
+    # 1. Soma total da coluna VALOR para o caixa específico até a data limite
+    sql_soma = """
+            SELECT SUM(VALOR), COUNT(*) 
+            FROM FEXTRATO 
+            WHERE CODCAIXA = ? AND DATA <= ?
         """
-    cursor.executemany(sql, regras)
-    conexao.commit()
-    print(f'{len(regras)} regras inseridas com sucesso na tabela TREGRAOFX!')
+    cursor.execute(sql_soma, (codcaixa, data_limite))
+    res_soma = cursor.fetchone()
 
-  except Exception as e:
-    conexao.rollback()
-    print(f'[ERRO] Falha ao inserir as regras: {e}')
-  finally:
+    total_soma = (
+        Decimal(str(res_soma[0]))
+        if res_soma and res_soma[0] is not None
+        else Decimal("0.00")
+    )
+    qtd_registros = res_soma[1] if res_soma else 0
+
+    print(f"\n[RESULTADO DA SOMA ATÉ 31/08]")
+    print(f"Total de registros no caixa {codcaixa}: {qtd_registros}")
+    print(f"Soma total da coluna VALOR: R$ {total_soma:,.2f}")
+
+    # 2. Mostra os últimos 20 lançamentos desse caixa até a data limite para conferência
+    print(f"\n--- ÚLTIMOS 20 LANÇAMENTOS DO CAIXA {codcaixa} (ATÉ 31/08) ---")
+    sql_ultimos = """
+            SELECT FIRST 20 DATA, VALOR, HISTORICO, IDEXTRATO 
+            FROM FEXTRATO 
+            WHERE CODCAIXA = ? AND DATA <= ?
+            ORDER BY DATA DESC, IDEXTRATO DESC
+        """
+    cursor.execute(sql_ultimos, (codcaixa, data_limite))
+    ultimos = cursor.fetchall()
+
+    if not ultimos:
+      print("Nenhum lançamento encontrado para este período/caixa.")
+    else:
+      for row in ultimos:
+        data_l, valor_l, hist_l, id_l = row
+        data_fmt = (
+            data_l.strftime("%d/%m/%Y")
+            if hasattr(data_l, "strftime")
+            else str(data_l)
+        )
+        print(
+            f"ID: {id_l} | Data: {data_fmt} | Valor: R$ {valor_l:10,.2f} | Hist:"
+            f" {hist_l}"
+        )
+
     cursor.close()
     conexao.close()
 
+  except Exception as e:
+    print(f"\n[ERRO DE CONEXÃO OU SQL]: {e}")
 
-if __name__ == '__main__':
-  ajustar_ccusto_e_inserir_regras()
+
+if __name__ == "__main__":
+  testar_extrato_banco()
