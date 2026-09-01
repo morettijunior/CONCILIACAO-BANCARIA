@@ -17,7 +17,7 @@ def comparar_listas(extrato_ofx, extrato_bd):
   for item_ofx in extrato_ofx:
     hist = str(item_ofx["historico"]).upper()
 
-    if any(k in hist for k in ["VISA", "MASTER", "AMEX", "CIELO"]):
+    if any(k in hist for k in ["VISA", "MASTER", "AMEX", "CIELO", "CARTAO", "CREDIT", "DEBIT"]):
       item_ofx["bloco"] = "cartoes"
     elif "CRÉD.LIQUIDAÇÃO COBRANÇA" in hist or "CRED.LIQUIDACAO COBRANCA" in hist:
       item_ofx["bloco"] = "boletos"
@@ -55,7 +55,61 @@ def comparar_listas(extrato_ofx, extrato_bd):
       else:
         outros_nao_conciliado.append(nao_conc_item)
 
-  # 3. VALIDAÇÃO EM LOTE PARA BOLETOS
+  # 3. VALIDAÇÃO EM LOTE PARA CARTÕES (Sua regra: Taxa Cartão + Num. Documento)
+  cartoes_ofx_pendentes = [
+      x for x in cartoes_nao_conciliado if x["origem"] == "OFX"
+  ]
+
+  if cartoes_ofx_pendentes:
+    total_ofx_cartoes = sum(item["item"]["valor"] for item in cartoes_ofx_pendentes)
+
+    # Passo 1: Encontra no BD os lançamentos de "TAXA CARTAO" (negativos)
+    itens_taxa_bd = []
+    for item_bd in list(bd_pendentes):
+      hist_bd = str(item_bd.get("historico", "")).upper()
+      val_bd = item_bd.get("valor", 0)
+      if "TAXA CARTAO" in hist_bd and val_bd < 0:
+        itens_taxa_bd.append(item_bd)
+
+    if itens_taxa_bd:
+      # Passo 2: Para cada taxa encontrada, acha o par positivo com o mesmo NUMERODOCUMENTO
+      lotes_cartao_bd = []
+      docs_utilizados = set()
+
+      for taxa in itens_taxa_bd:
+        num_doc = taxa.get("numerodocumento")
+        if num_doc:
+          # Procura no bd_pendentes o lançamento positivo com o mesmo num_doc
+          for item_bd in bd_pendentes:
+            if (
+                item_bd.get("numerodocumento") == num_doc
+                and item_bd.get("valor", 0) > 0
+                and item_bd not in lotes_cartao_bd
+            ):
+              lotes_cartao_bd.append(item_bd)
+              lotes_cartao_bd.append(taxa)
+              docs_utilizados.add(num_doc)
+              break
+
+      if lotes_cartao_bd:
+        # Passo 3: Soma o líquido (positivos - negativos/taxas)
+        total_bd_cartoes = sum(b["valor"] for b in lotes_cartao_bd)
+
+        # Se o total líquido do lote bater com o total dos cartões pendentes no OFX
+        if abs(total_ofx_cartoes - total_bd_cartoes) < Decimal("0.01"):
+          for item_ofx_p in cartoes_ofx_pendentes:
+            cartoes_nao_conciliado.remove(item_ofx_p)
+            cartoes_conciliado.append({
+                "ofx": item_ofx_p["item"],
+                "bd": lotes_cartao_bd[0],  # Associa ao principal do lote
+            })
+
+          # Remove os itens do BD usados da lista de pendentes gerais
+          for b_item in lotes_cartao_bd:
+            if b_item in bd_pendentes:
+              bd_pendentes.remove(b_item)
+
+  # 4. VALIDAÇÃO EM LOTE PARA BOLETOS (Mantém a que já funcionou)
   boletos_ofx_pendentes = [
       x for x in boletos_nao_conciliado if x["origem"] == "OFX"
   ]

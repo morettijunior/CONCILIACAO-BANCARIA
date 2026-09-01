@@ -14,40 +14,46 @@ def consultar_extrato(banco_esperado, caminho_ofx, caminho_bd):
 
   if not dt_inicio or not dt_fim:
     print(
-        '[ERRO] Não foi possível obter as datas inicial e final do arquivo OFX.'
+        "[ERRO] Não foi possível obter as datas inicial e final do arquivo"
+        " OFX."
     )
     return []
 
+  # Define o caixa correto com base no banco selecionado
+  codcaixa = "02" if str(banco_esperado) == "748" else "07"
+
   conexao = fdb.connect(
       dsn=caminho_bd,
-      user='SYSDBA',
-      password='masterkey',
-      charset='ISO8859_1',
+      user="SYSDBA",
+      password="masterkey",
+      charset="ISO8859_1",
   )
   cursor = conexao.cursor()
 
   try:
+    # Adicionado NUMERODOCUMENTO na busca e o filtro por CODCAIXA
     sql = """
-            SELECT DATA, VALOR, HISTORICO 
+            SELECT DATA, VALOR, HISTORICO, NUMERODOCUMENTO 
             FROM FEXTRATO 
-            WHERE DATA BETWEEN ? AND ?
+            WHERE CODCAIXA = ? AND DATA BETWEEN ? AND ?
         """
-    cursor.execute(sql, (dt_inicio, dt_fim))
+    cursor.execute(sql, (codcaixa, dt_inicio, dt_fim))
     registros = cursor.fetchall()
 
     extrato_bd = []
     for reg in registros:
-      data_bd, valor_bd, historico_bd = reg
+      data_bd, valor_bd, historico_bd, numerodocumento_bd = reg
       extrato_bd.append({
-          'data': data_bd,
-          'valor': Decimal(str(valor_bd)),
-          'historico': str(historico_bd or '').strip(),
+          "data": data_bd,
+          "valor": Decimal(str(valor_bd)),
+          "historico": str(historico_bd or "").strip(),
+          "numerodocumento": str(numerodocumento_bd or "").strip(),
       })
 
     return extrato_bd
 
   except Exception as e:
-    print(f'[ERRO] Falha ao consultar o extrato no banco de dados: {e}')
+    print(f"[ERRO] Falha ao consultar o extrato no banco de dados: {e}")
     return []
   finally:
     cursor.close()
