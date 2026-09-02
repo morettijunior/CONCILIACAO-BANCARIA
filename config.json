@@ -1,4 +1,4 @@
 {
     "caminho_ofx": "C:/Users/rondo/Desktop/OFX/sicredi teste dia 19.ofx",
-    "caminho_bd": "C:/Users/rondo/Desktop/Phyton/BD FIREBIRD/TGA.FDB"
+    "caminho_bd": "Servidor:c:/tga/Dados/TGA.FDB"
 }

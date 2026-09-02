@@ -20,512 +20,538 @@ ctk.set_default_color_theme("blue")
 
 
 class JanelaGerenciarRegras(ctk.CTkToplevel):
-  """Janela secundária para gerenciar as regras de OFX"""
+    """Janela secundária para gerenciar as regras de OFX"""
 
-  def __init__(self, parent):
-    super().__init__(parent)
-    self.title("Gerenciamento de Regras OFX")
-    self.geometry("680x580")
-    self.resizable(False, False)
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Gerenciamento de Regras OFX")
+        self.geometry("780x640")
+        self.resizable(False, False)
 
-    self.transient(parent)
-    self.grab_set()
+        self.transient(parent)
+        self.grab_set()
 
-    lbl = ctk.CTkLabel(
-        self, text="Cadastro e Manutenção de Regras", font=("Arial", 18, "bold")
-    )
-    lbl.pack(pady=15)
+        lbl = ctk.CTkLabel(
+            self, text="Cadastro e Manutenção de Regras", font=("Arial", 18, "bold")
+        )
+        lbl.pack(pady=15)
 
-    form_frame = ctk.CTkFrame(self)
-    form_frame.pack(pady=5, padx=20, fill="x")
+        form_frame = ctk.CTkFrame(self)
+        form_frame.pack(pady=5, padx=20, fill="x")
 
-    ctk.CTkLabel(form_frame, text="Cód. CFO:").grid(
-        row=0, column=0, padx=5, pady=5, sticky="w"
-    )
-    self.entry_cfo = ctk.CTkEntry(form_frame, width=120)
-    self.entry_cfo.grid(row=0, column=1, padx=5, pady=5)
+        # Linha 0: CFO e C. Custo
+        ctk.CTkLabel(form_frame, text="Cód. CFO:").grid(
+            row=0, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.entry_cfo = ctk.CTkEntry(form_frame, width=120)
+        self.entry_cfo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-    ctk.CTkLabel(form_frame, text="C. Custo:").grid(
-        row=0, column=2, padx=5, pady=5, sticky="w"
-    )
-    self.entry_ccusto = ctk.CTkEntry(form_frame, width=120)
-    self.entry_ccusto.grid(row=0, column=3, padx=5, pady=5)
+        ctk.CTkLabel(form_frame, text="C. Custo:").grid(
+            row=0, column=2, padx=5, pady=5, sticky="w"
+        )
+        self.entry_ccusto = ctk.CTkEntry(form_frame, width=120)
+        self.entry_ccusto.grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
-    ctk.CTkLabel(form_frame, text="Histórico Padrão:").grid(
-        row=1, column=0, padx=5, pady=5, sticky="w"
-    )
-    self.entry_hist = ctk.CTkEntry(form_frame, width=350)
-    self.entry_hist.grid(row=1, column=1, columnspan=3, padx=5, pady=5)
+        # Linha 1: Caixa Origem e Caixa Destino (Opcional para Transferências)
+        ctk.CTkLabel(form_frame, text="Cx. Origem (Transf.):").grid(
+            row=1, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.entry_cx_origem = ctk.CTkEntry(form_frame, width=120)
+        self.entry_cx_origem.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-    ctk.CTkLabel(form_frame, text="Texto de Busca (OFX):").grid(
-        row=2, column=0, padx=5, pady=5, sticky="w"
-    )
-    self.entry_busca = ctk.CTkEntry(form_frame, width=350)
-    self.entry_busca.grid(row=2, column=1, columnspan=3, padx=5, pady=5)
+        ctk.CTkLabel(form_frame, text="Cx. Destino (Transf.):").grid(
+            row=1, column=2, padx=5, pady=5, sticky="w"
+        )
+        self.entry_cx_destino = ctk.CTkEntry(form_frame, width=120)
+        self.entry_cx_destino.grid(row=1, column=3, padx=5, pady=5, sticky="w")
 
-    btn_salvar = ctk.CTkButton(
-        form_frame,
-        text="Inserir Nova Regra",
-        command=self.salvar_regra,
-        fg_color="#28a745",
-        hover_color="#218838",
-    )
-    btn_salvar.grid(row=3, column=1, columnspan=2, pady=10)
+        # Linha 2: Histórico Padrão
+        ctk.CTkLabel(form_frame, text="Histórico Padrão:").grid(
+            row=2, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.entry_hist = ctk.CTkEntry(form_frame, width=380)
+        self.entry_hist.grid(row=2, column=1, columnspan=3, padx=5, pady=5, sticky="w")
 
-    ctk.CTkLabel(
-        self, text="Regras Ativas (com ID de Exclusão):", font=("Arial", 14, "bold")
-    ).pack(anchor="w", padx=20, pady=(15, 5))
+        # Linha 3: Texto de Busca
+        ctk.CTkLabel(form_frame, text="Texto de Busca (OFX):").grid(
+            row=3, column=0, padx=5, pady=5, sticky="w"
+        )
+        self.entry_busca = ctk.CTkEntry(form_frame, width=380)
+        self.entry_busca.grid(row=3, column=1, columnspan=3, padx=5, pady=5, sticky="w")
 
-    self.lista_texto = ctk.CTkTextbox(
-        self, font=("Consolas", 11), width=630, height=180
-    )
-    self.lista_texto.pack(padx=20, pady=5)
+        btn_salvar = ctk.CTkButton(
+            form_frame,
+            text="Inserir Nova Regra",
+            command=self.salvar_regra,
+            fg_color="#28a745",
+            hover_color="#218838",
+        )
+        btn_salvar.grid(row=4, column=1, columnspan=2, pady=10)
 
-    del_frame = ctk.CTkFrame(self)
-    del_frame.pack(pady=10, padx=20, fill="x")
+        ctk.CTkLabel(
+            self, text="Regras Ativas (com ID de Exclusão):", font=("Arial", 14, "bold")
+        ).pack(anchor="w", padx=20, pady=(15, 5))
 
-    ctk.CTkLabel(del_frame, text="Digite o ID/Número da regra para excluir:").pack(
-        side="left", padx=5
-    )
-    self.entry_del_id = ctk.CTkEntry(del_frame, width=80)
-    self.entry_del_id.pack(side="left", padx=5)
+        self.lista_texto = ctk.CTkTextbox(
+            self, font=("Consolas", 11), width=730, height=170
+        )
+        self.lista_texto.pack(padx=20, pady=5)
 
-    btn_excluir = ctk.CTkButton(
-        del_frame,
-        text="Excluir por ID",
-        command=self.remover_regra,
-        fg_color="#dc3545",
-        hover_color="#c82333",
-    )
-    btn_excluir.pack(side="left", padx=10)
+        del_frame = ctk.CTkFrame(self)
+        del_frame.pack(pady=10, padx=20, fill="x")
 
-    self.regras_cache = []
-    self.atualizar_lista()
+        ctk.CTkLabel(del_frame, text="Digite o ID/Número da regra para excluir:").pack(
+            side="left", padx=5
+        )
+        self.entry_del_id = ctk.CTkEntry(del_frame, width=80)
+        self.entry_del_id.pack(side="left", padx=5)
 
-  def atualizar_lista(self):
-    self.lista_texto.delete("0.0", "end")
-    self.regras_cache = listar_regras()
+        btn_excluir = ctk.CTkButton(
+            del_frame,
+            text="Excluir por ID",
+            command=self.remover_regra,
+            fg_color="#dc3545",
+            hover_color="#c82333",
+        )
+        btn_excluir.pack(side="left", padx=10)
 
-    if not self.regras_cache:
-      self.lista_texto.insert("0.0", "Nenhuma regra cadastrada.\n")
-      return
-
-    for idx, r in enumerate(self.regras_cache, start=1):
-      cfo, cc, hist, busca = r
-      linha = f"[{idx}] CFO: {cfo} | CC: {cc} | Busca: {busca} -> Hist: {hist}\n"
-      self.lista_texto.insert("end", linha)
-
-  def salvar_regra(self):
-    cfo = self.entry_cfo.get()
-    cc = self.entry_ccusto.get()
-    hist = self.entry_hist.get()
-    busca = self.entry_busca.get()
-
-    if not cfo or not cc or not hist or not busca:
-      messagebox.showwarning(
-          "Atenção", "Todos os campos devem ser preenchidos!"
-      )
-      return
-
-    sucesso = inserir_regra(cfo, cc, hist, busca)
-    if sucesso:
-      messagebox.showinfo("Sucesso", "Regra inserida com sucesso!")
-      self.entry_cfo.delete(0, "end")
-      self.entry_ccusto.delete(0, "end")
-      self.entry_hist.delete(0, "end")
-      self.entry_busca.delete(0, "end")
-      self.atualizar_lista()
-    else:
-      messagebox.showerror(
-          "Erro", "Falha ao inserir regra. Verifique o console."
-      )
-
-  def remover_regra(self):
-    digitado = self.entry_del_id.get().strip()
-    if not digitado.isdigit():
-      messagebox.showwarning(
-          "Atenção", "Digite um número de ID válido listado na tela."
-      )
-      return
-
-    indice = int(digitado) - 1
-
-    if indice < 0 or indice >= len(self.regras_cache):
-      messagebox.showerror("Erro", "ID informado não existe na listagem.")
-      return
-
-    regra_selecionada = self.regras_cache[indice]
-    busca_alvo = regra_selecionada[3]
-
-    if messagebox.askyesno(
-        "Confirmar Exclusão",
-        f"Deseja realmente excluir a regra ID [{digitado}] (Busca: {busca_alvo})?",
-    ):
-      sucesso = excluir_regra(busca_alvo)
-      if sucesso:
-        messagebox.showinfo("Sucesso", "Regra excluída com sucesso!")
-        self.entry_del_id.delete(0, "end")
+        self.regras_cache = []
         self.atualizar_lista()
-      else:
-        messagebox.showerror("Erro", "Falha ao excluir regra no banco de dados.")
+
+    def atualizar_lista(self):
+        self.lista_texto.delete("0.0", "end")
+        caminho_atual = self.master.entry_bd.get().strip() if hasattr(self.master, "entry_bd") else None
+        self.regras_cache = listar_regras(caminho_atual)
+
+        if not self.regras_cache:
+            self.lista_texto.insert("0.0", "Nenhuma regra cadastrada.\n")
+            return
+
+        for idx, r in enumerate(self.regras_cache, start=1):
+            cfo, cc, hist, busca, cx_orig, cx_dest = r
+            info_transf = f" | Transf: [{cx_orig} ➔ {cx_dest}]" if (cx_orig and cx_dest) else ""
+            linha = f"[{idx}] CFO: {cfo} | CC: {cc}{info_transf} | Busca: {busca} -> Hist: {hist}\n"
+            self.lista_texto.insert("end", linha)
+
+    def salvar_regra(self):
+        cfo = self.entry_cfo.get().strip()
+        cc = self.entry_ccusto.get().strip()
+        hist = self.entry_hist.get().strip()
+        busca = self.entry_busca.get().strip()
+        cx_origem = self.entry_cx_origem.get().strip()
+        cx_destino = self.entry_cx_destino.get().strip()
+
+        if (cx_origem and not cx_destino) or (cx_destino and not cx_origem):
+            messagebox.showwarning("Atenção", "Para regras de transferência, informe tanto o Caixa de Origem quanto o de Destino!")
+            return
+
+        if not cx_origem and not (cfo and cc):
+            messagebox.showwarning("Atenção", "Preencha Cód. CFO e C. Custo (ou os Caixas de Transferência)!")
+            return
+
+        if not hist or not busca:
+            messagebox.showwarning("Atenção", "Os campos Histórico Padrão e Texto de Busca são obrigatórios!")
+            return
+
+        caminho_atual = self.master.entry_bd.get().strip() if hasattr(self.master, "entry_bd") else None
+
+        sucesso = inserir_regra(
+            cfo if cfo else None, 
+            cc if cc else None, 
+            hist, 
+            busca, 
+            cx_origem if cx_origem else None, 
+            cx_destino if cx_destino else None,
+            caminho_atual
+        )
+        
+        if sucesso:
+            messagebox.showinfo("Sucesso", "Regra inserida com sucesso!")
+            self.entry_cfo.delete(0, "end")
+            self.entry_ccusto.delete(0, "end")
+            self.entry_hist.delete(0, "end")
+            self.entry_busca.delete(0, "end")
+            self.entry_cx_origem.delete(0, "end")
+            self.entry_cx_destino.delete(0, "end")
+            self.atualizar_lista()
+        else:
+            messagebox.showerror("Erro", "Falha ao inserir regra. Verifique o console.")
+
+    def remover_regra(self):
+        digitado = self.entry_del_id.get().strip()
+        if not digitado.isdigit():
+            messagebox.showwarning(
+                "Atenção", "Digite um número de ID válido listado na tela."
+            )
+            return
+
+        indice = int(digitado) - 1
+
+        if indice < 0 or indice >= len(self.regras_cache):
+            messagebox.showerror("Erro", "ID informado não existe na listagem.")
+            return
+
+        regra_selecionada = self.regras_cache[indice]
+        busca_alvo = regra_selecionada[3]
+        caminho_atual = self.master.entry_bd.get().strip() if hasattr(self.master, "entry_bd") else None
+
+        if messagebox.askyesno(
+            "Confirmar Exclusão",
+            f"Deseja realmente excluir a regra ID [{digitado}] (Busca: {busca_alvo})?",
+        ):
+            sucesso = excluir_regra(busca_alvo, caminho_atual)
+            if sucesso:
+                messagebox.showinfo("Sucesso", "Regra excluída com sucesso!")
+                self.entry_del_id.delete(0, "end")
+                self.atualizar_lista()
+            else:
+                messagebox.showerror("Erro", "Falha ao excluir regra no banco de dados.")
 
 
 class AppConciliacao(ctk.CTk):
 
-  def __init__(self):
-    super().__init__()
+    def __init__(self):
+        super().__init__()
 
-    self.title("Sistema de Conciliação Bancária")
-    self.geometry("750x680")
-    self.resizable(False, False)
+        self.title("Sistema de Conciliação Bancária")
+        self.geometry("750x680")
+        self.resizable(False, False)
 
-    # Carrega as configurações salvas (ou padrões)
-    self.config = carregar_config()
+        # Carrega as configurações salvas (ou padrões)
+        self.config = carregar_config()
 
-    self.label_titulo = ctk.CTkLabel(
-        self, text="Conciliação Bancária TGA", font=("Arial", 22, "bold")
-    )
-    self.label_titulo.pack(pady=10)
+        self.label_titulo = ctk.CTkLabel(
+            self, text="Conciliação Bancária TGA", font=("Arial", 22, "bold")
+        )
+        self.label_titulo.pack(pady=10)
 
-    self.btn_regras = ctk.CTkButton(
-        self,
-        text="⚙ Gerenciar Regras OFX",
-        command=self.abrir_tela_regras,
-        font=("Arial", 13, "bold"),
-        fg_color="#6c757d",
-        hover_color="#5a6268",
-        height=30,
-        width=200,
-    )
-    self.btn_regras.pack(pady=2)
+        self.btn_regras = ctk.CTkButton(
+            self,
+            text="⚙ Gerenciar Regras OFX",
+            command=self.abrir_tela_regras,
+            font=("Arial", 13, "bold"),
+            fg_color="#6c757d",
+            hover_color="#5a6268",
+            height=30,
+            width=200,
+        )
+        self.btn_regras.pack(pady=2)
 
-    # --- FRAME DE CONFIGURAÇÃO DE CAMINHOS ---
-    self.frame_paths = ctk.CTkFrame(self)
-    self.frame_paths.pack(pady=8, padx=20, fill="x")
+        # --- FRAME DE CONFIGURAÇÃO DE CAMINHOS ---
+        self.frame_paths = ctk.CTkFrame(self)
+        self.frame_paths.pack(pady=8, padx=20, fill="x")
 
-    # Arquivo OFX
-    ctk.CTkLabel(
-        self.frame_paths, text="Arquivo OFX:", font=("Arial", 11, "bold")
-    ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-    self.entry_ofx = ctk.CTkEntry(self.frame_paths, width=480)
-    self.entry_ofx.insert(0, self.config["caminho_ofx"])
-    self.entry_ofx.grid(row=0, column=1, padx=5, pady=5)
-    btn_procurar_ofx = ctk.CTkButton(
-        self.frame_paths,
-        text="Procurar",
-        width=80,
-        command=self.procurar_ofx,
-    )
-    btn_procurar_ofx.grid(row=0, column=2, padx=5, pady=5)
+        # Arquivo OFX
+        ctk.CTkLabel(
+            self.frame_paths, text="Arquivo OFX:", font=("Arial", 11, "bold")
+        ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_ofx = ctk.CTkEntry(self.frame_paths, width=480)
+        self.entry_ofx.insert(0, self.config["caminho_ofx"])
+        self.entry_ofx.grid(row=0, column=1, padx=5, pady=5)
+        btn_procurar_ofx = ctk.CTkButton(
+            self.frame_paths,
+            text="Procurar",
+            width=80,
+            command=self.procurar_ofx,
+        )
+        btn_procurar_ofx.grid(row=0, column=2, padx=5, pady=5)
 
-    # Arquivo Banco de Dados (.fdb)
-    ctk.CTkLabel(
-        self.frame_paths, text="Banco Firebird:", font=("Arial", 11, "bold")
-    ).grid(row=1, column=0, padx=5, pady=5, sticky="w")
-    self.entry_bd = ctk.CTkEntry(self.frame_paths, width=480)
-    self.entry_bd.insert(0, self.config["caminho_bd"])
-    self.entry_bd.grid(row=1, column=1, padx=5, pady=5)
-    btn_procurar_bd = ctk.CTkButton(
-        self.frame_paths, text="Procurar", width=80, command=self.procurar_bd
-    )
-    btn_procurar_bd.grid(row=1, column=2, padx=5, pady=5)
+        # Arquivo Banco de Dados (.fdb)
+        ctk.CTkLabel(
+            self.frame_paths, text="Banco Firebird:", font=("Arial", 11, "bold")
+        ).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.entry_bd = ctk.CTkEntry(self.frame_paths, width=480)
+        self.entry_bd.insert(0, self.config["caminho_bd"])
+        self.entry_bd.grid(row=1, column=1, padx=5, pady=5)
+        btn_procurar_bd = ctk.CTkButton(
+            self.frame_paths, text="Procurar", width=80, command=self.procurar_bd
+        )
+        btn_procurar_bd.grid(row=1, column=2, padx=5, pady=5)
 
-    # --- FRAME DE SELEÇÃO DE BANCO ---
-    self.frame_banco = ctk.CTkFrame(self)
-    self.frame_banco.pack(pady=8, padx=20, fill="x")
+        # --- FRAME DE SELEÇÃO DE BANCO ---
+        self.frame_banco = ctk.CTkFrame(self)
+        self.frame_banco.pack(pady=8, padx=20, fill="x")
 
-    self.label_escolha = ctk.CTkLabel(
-        self.frame_banco, text="Selecione o Banco:", font=("Arial", 14)
-    )
-    self.label_escolha.pack(side="left", padx=15, pady=12)
+        self.label_escolha = ctk.CTkLabel(
+            self.frame_banco, text="Selecione o Banco:", font=("Arial", 14)
+        )
+        self.label_escolha.pack(side="left", padx=15, pady=12)
 
-    self.banco_var = ctk.IntVar(value=748)
+        self.banco_var = ctk.IntVar(value=748)
 
-    self.radio_sicredi = ctk.CTkRadioButton(
-        self.frame_banco,
-        text="Sicredi (748)",
-        variable=self.banco_var,
-        value=748,
-        font=("Arial", 13),
-    )
-    self.radio_sicredi.pack(side="left", padx=10)
+        self.radio_sicredi = ctk.CTkRadioButton(
+            self.frame_banco,
+            text="Sicredi (748)",
+            variable=self.banco_var,
+            value=748,
+            font=("Arial", 13),
+        )
+        self.radio_sicredi.pack(side="left", padx=10)
 
-    self.radio_sicoob = ctk.CTkRadioButton(
-        self.frame_banco,
-        text="Sicoob (756)",
-        variable=self.banco_var,
-        value=756,
-        font=("Arial", 13),
-    )
-    self.radio_sicoob.pack(side="left", padx=10)
+        self.radio_sicoob = ctk.CTkRadioButton(
+            self.frame_banco,
+            text="Sicoob (756)",
+            variable=self.banco_var,
+            value=756,
+            font=("Arial", 13),
+        )
+        self.radio_sicoob.pack(side="left", padx=10)
 
-    self.btn_executar = ctk.CTkButton(
-        self,
-        text="Executar Conciliação",
-        command=self.rodar_conciliacao,
-        font=("Arial", 15, "bold"),
-        fg_color="#28a745",
-        hover_color="#218838",
-        height=40,
-    )
-    self.btn_executar.pack(pady=10, padx=20, fill="x")
+        self.btn_executar = ctk.CTkButton(
+            self,
+            text="Executar Conciliação",
+            command=self.rodar_conciliacao,
+            font=("Arial", 15, "bold"),
+            fg_color="#28a745",
+            hover_color="#218838",
+            height=40,
+        )
+        self.btn_executar.pack(pady=10, padx=20, fill="x")
 
-    self.caixa_texto = ctk.CTkTextbox(
-        self, font=("Consolas", 12), width=700, height=310
-    )
-    self.caixa_texto.pack(pady=5, padx=20)
-    self.caixa_texto.insert(
-        "0.0",
-        "Sistema pronto. Verifique os caminhos acima e clique em 'Executar"
-        " Conciliação'.\n",
-    )
+        self.caixa_texto = ctk.CTkTextbox(
+            self, font=("Consolas", 12), width=700, height=310
+        )
+        self.caixa_texto.pack(pady=5, padx=20)
+        self.caixa_texto.insert(
+            "0.0",
+            "Sistema pronto. Verifique os caminhos acima e clique em 'Executar"
+            " Conciliação'.\n",
+        )
 
-  def procurar_ofx(self):
-    arquivo = filedialog.askopenfilename(
-        title="Selecione o arquivo OFX",
-        filetypes=[("Arquivos OFX", "*.ofx"), ("Todos os arquivos", "*.*")],
-    )
-    if arquivo:
-      self.entry_ofx.delete(0, "end")
-      self.entry_ofx.insert(0, arquivo)
-      self.salvar_alteracoes_config()
+    def procurar_ofx(self):
+        arquivo = filedialog.askopenfilename(
+            title="Selecione o arquivo OFX",
+            filetypes=[("Arquivos OFX", "*.ofx"), ("Todos os arquivos", "*.*")],
+        )
+        if arquivo:
+            self.entry_ofx.delete(0, "end")
+            self.entry_ofx.insert(0, arquivo)
+            self.salvar_alteracoes_config()
 
-  def procurar_bd(self):
-    arquivo = filedialog.askopenfilename(
-        title="Selecione o Banco de Dados Firebird",
-        filetypes=[
-            ("Arquivos Firebird", "*.fdb"),
-            ("Todos os arquivos", "*.*"),
-        ],
-    )
-    if arquivo:
-      self.entry_bd.delete(0, "end")
-      self.entry_bd.insert(0, arquivo)
-      self.salvar_alteracoes_config()
+    def procurar_bd(self):
+        arquivo = filedialog.askopenfilename(
+            title="Selecione o Banco de Dados Firebird",
+            filetypes=[
+                ("Arquivos Firebird", "*.fdb"),
+                ("Todos os arquivos", "*.*"),
+            ],
+        )
+        if arquivo:
+            self.entry_bd.delete(0, "end")
+            self.entry_bd.insert(0, arquivo)
+            self.salvar_alteracoes_config()
 
-  def salvar_alteracoes_config(self):
-    caminho_ofx = self.entry_ofx.get().strip()
-    caminho_bd = self.entry_bd.get().strip()
-    salvar_config(caminho_ofx, caminho_bd)
+    def salvar_alteracoes_config(self):
+        caminho_ofx = self.entry_ofx.get().strip()
+        caminho_bd = self.entry_bd.get().strip()
+        salvar_config(caminho_ofx, caminho_bd)
 
-  def abrir_tela_regras(self):
-    JanelaGerenciarRegras(self)
+    def abrir_tela_regras(self):
+        JanelaGerenciarRegras(self)
 
-  def log(self, mensagem):
-    self.caixa_texto.insert("end", mensagem + "\n")
-    self.caixa_texto.see("end")
+    def log(self, mensagem):
+        self.caixa_texto.insert("end", mensagem + "\n")
+        self.caixa_texto.see("end")
 
-  def rodar_conciliacao(self):
-    # Garante que qualquer alteração manual nos campos de texto seja salva
-    self.salvar_alteracoes_config()
+    def rodar_conciliacao(self):
+        self.salvar_alteracoes_config()
 
-    banco_esperado = self.banco_var.get()
-    nome_banco = "Sicredi" if banco_esperado == 748 else "Sicoob"
-    caminho_extrato = self.entry_ofx.get().strip()
-    caminho_banco = self.entry_bd.get().strip()
+        banco_esperado = self.banco_var.get()
+        nome_banco = "Sicredi" if banco_esperado == 748 else "Sicoob"
+        caminho_extrato = self.entry_ofx.get().strip()
+        caminho_banco = self.entry_bd.get().strip()
 
-    self.caixa_texto.delete("0.0", "end")
-    self.log(
-        f"Processando conciliação para o {nome_banco} (Banco:"
-        f" {banco_esperado})...\n"
-    )
-    self.update()
-
-    try:
-      lista_ofx = ler_ofx(banco_esperado, caminho_extrato)
-      if not lista_ofx:
+        self.caixa_texto.delete("0.0", "end")
         self.log(
-            "[AVISO] Nenhum lançamento encontrado no OFX ou falha na leitura."
+            f"Processando conciliação para o {nome_banco} (Banco:"
+            f" {banco_esperado})...\n"
         )
-        return
+        self.update()
 
-      lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
-      saldo_banco = saldo_final(banco_esperado, caminho_extrato)
+        try:
+            lista_ofx = ler_ofx(banco_esperado, caminho_extrato)
+            if not lista_ofx:
+                self.log(
+                    "[AVISO] Nenhum lançamento encontrado no OFX ou falha na leitura."
+                )
+                return
 
-      # Recebe as 6 listas separadas por blocos
-      (
-          cartoes_conc,
-          cartoes_nao_conc,
-          boletos_conc,
-          boletos_nao_conc,
-          outros_conc,
-          outros_nao_conc,
-      ) = comparar_listas(lista_ofx, lista_bd)
+            lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
+            saldo_banco = saldo_final(banco_esperado, caminho_extrato)
 
-      total_conciliados = (
-          len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
-      )
-      total_nao_conciliados = (
-          len(cartoes_nao_conc) + len(boletos_nao_conc) + len(outros_nao_conc)
-      )
+            (
+                cartoes_conc,
+                cartoes_nao_conc,
+                boletos_conc,
+                boletos_nao_conc,
+                outros_conc,
+                outros_nao_conc,
+            ) = comparar_listas(lista_ofx, lista_bd)
 
-      self.log(f"-> Total de registros no OFX: {len(lista_ofx)}")
-      self.log(f"-> Total de registros no BD: {len(lista_bd)}")
-      self.log(f"-> Já conciliados (Total): {total_conciliados}")
-      self.log(
-          f"-> Não conciliados (antes das regras): {total_nao_conciliados}"
-      )
+            total_conciliados = (
+                len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
+            )
+            total_nao_conciliados = (
+                len(cartoes_nao_conc) + len(boletos_nao_conc) + len(outros_nao_conc)
+            )
 
-      if total_nao_conciliados > 0:
-        self.log(
-            "\nAplicando regras automáticas aos itens não conciliados por"
-            " bloco..."
-        )
+            self.log(f"-> Total de registros no OFX: {len(lista_ofx)}")
+            self.log(f"-> Total de registros no BD: {len(lista_bd)}")
+            self.log(f"-> Já conciliados (Total): {total_conciliados}")
+            self.log(
+                f"-> Não conciliados (antes das regras): {total_nao_conciliados}"
+            )
 
-        class RedirecionadorPrint:
+            if total_nao_conciliados > 0:
+                self.log(
+                    "\nAplicando regras automáticas aos itens não conciliados por"
+                    " bloco..."
+                )
 
-          def __init__(self, callback_log):
-            self.callback_log = callback_log
+                class RedirecionadorPrint:
 
-          def write(self, texto):
-            if texto.strip():
-              self.callback_log(texto.strip())
+                    def __init__(self, callback_log):
+                        self.callback_log = callback_log
 
-          def flush(self):
-            pass
+                    def write(self, texto):
+                        if texto.strip():
+                            self.callback_log(texto.strip())
 
-        sys.stdout = RedirecionadorPrint(self.log)
-        # Passa o caminho do BD do servidor e as 6 listas para o processador de regras
-        inserir_itens(
-            banco_esperado,
-            caminho_banco,
-            cartoes_nao_conc,
-            boletos_nao_conc,
-            outros_nao_conc,
-            cartoes_conc,
-            boletos_conc,
-            outros_conc,
-        )
+                    def flush(self):
+                        pass
 
-        # NOVA ETAPA: Executa a validação e baixa automática dos cartões pendentes do OFX
-        pendentes_ofx_cartoes_para_baixa = [
-            x for x in cartoes_nao_conc if x["origem"] == "OFX"
-        ]
-        if pendentes_ofx_cartoes_para_baixa:
-          from service.conciliacao import processar_baixa_cartoes
+                sys.stdout = RedirecionadorPrint(self.log)
+                inserir_itens(
+                    banco_esperado,
+                    caminho_banco,
+                    cartoes_nao_conc,
+                    boletos_nao_conc,
+                    outros_nao_conc,
+                    cartoes_conc,
+                    boletos_conc,
+                    outros_conc,
+                )
 
-          data_ofx_base = (
-              lista_ofx[0]["data"] if lista_ofx else datetime.now().date()
-          )
-          processar_baixa_cartoes(
-              banco_esperado,
-              caminho_banco,
-              pendentes_ofx_cartoes_para_baixa,
-              data_ofx_base,
-          )
+                pendentes_ofx_cartoes_para_baixa = [
+                    x for x in cartoes_nao_conc if x["origem"] == "OFX"
+                ]
+                if pendentes_ofx_cartoes_para_baixa:
+                    from service.conciliacao import processar_baixa_cartoes
 
-          # ATUALIZAÇÃO DA GUI: Como a baixa automática inseriu os registros no banco,
-          # recarregamos a lista do BD e refazemos a comparação para a interface refletir o sucesso!
-          lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
-          (
-              cartoes_conc,
-              cartoes_nao_conc,
-              boletos_conc,
-              boletos_nao_conc,
-              outros_conc,
-              outros_nao_conc,
-          ) = comparar_listas(lista_ofx, lista_bd)
+                    data_ofx_base = (
+                        lista_ofx[0]["data"] if lista_ofx else datetime.now().date()
+                    )
+                    processar_baixa_cartoes(
+                        banco_esperado,
+                        caminho_banco,
+                        pendentes_ofx_cartoes_para_baixa,
+                        data_ofx_base,
+                    )
 
-        sys.stdout = sys.__stdout__
+                    lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
+                    (
+                        cartoes_conc,
+                        cartoes_nao_conc,
+                        boletos_conc,
+                        boletos_nao_conc,
+                        outros_conc,
+                        outros_nao_conc,
+                    ) = comparar_listas(lista_ofx, lista_bd)
 
-      # Descobre a data final com base no último item do OFX carregado para filtrar o saldo corretamente
-      data_limite_ofx = None
-      if lista_ofx:
-        data_limite_ofx = lista_ofx[-1]["data"]
+                sys.stdout = sys.__stdout__
 
-      # Pega o saldo final do sistema na tabela FEXTRATO filtrando até a data limite do OFX
-      total_sistema = saldo_sistema(
-          banco_esperado, caminho_banco, data_limite_ofx
-      )
+            data_limite_ofx = None
+            if lista_ofx:
+                data_limite_ofx = lista_ofx[-1]["data"]
 
-      total_conciliados_final = (
-          len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
-      )
+            total_sistema = saldo_sistema(
+                banco_esperado, caminho_banco, data_limite_ofx
+            )
 
-      # Filtra apenas as pendências geradas pelo OFX para a listagem
-      pendentes_ofx_cartoes = [
-          x for x in cartoes_nao_conc if x["origem"] == "OFX"
-      ]
-      pendentes_ofx_boletos = [
-          x for x in boletos_nao_conc if x["origem"] == "OFX"
-      ]
-      pendentes_ofx_outros = [x for x in outros_nao_conc if x["origem"] == "OFX"]
+            total_conciliados_final = (
+                len(cartoes_conc) + len(boletos_conc) + len(outros_conc)
+            )
 
-      total_pendentes_ofx = (
-          len(pendentes_ofx_cartoes)
-          + len(pendentes_ofx_boletos)
-          + len(pendentes_ofx_outros)
-      )
+            pendentes_ofx_cartoes = [
+                x for x in cartoes_nao_conc if x["origem"] == "OFX"
+            ]
+            pendentes_ofx_boletos = [
+                x for x in boletos_nao_conc if x["origem"] == "OFX"
+            ]
+            pendentes_ofx_outros = [x for x in outros_nao_conc if x["origem"] == "OFX"]
 
-      self.log("\n" + "=" * 45)
-      self.log(f"      RESULTADO FINAL - {nome_banco.upper()}")
-      self.log("=" * 45)
-      self.log(f"Total Conciliados (Final): {total_conciliados_final}")
-      self.log(f"  - Cartões: {len(cartoes_conc)}")
-      self.log(f"  - Boletos: {len(boletos_conc)}")
-      self.log(f"  - Outros:  {len(outros_conc)}")
-      self.log(f"Total Pendentes do OFX: {total_pendentes_ofx}")
-      self.log(f"  - Cartões Pendentes: {len(pendentes_ofx_cartoes)}")
-      self.log(f"  - Boletos Pendentes: {len(pendentes_ofx_boletos)}")
-      self.log(f"  - Outros Pendentes:  {len(pendentes_ofx_outros)}")
-      self.log("-" * 45)
+            total_pendentes_ofx = (
+                len(pendentes_ofx_cartoes)
+                + len(pendentes_ofx_boletos)
+                + len(pendentes_ofx_outros)
+            )
 
-      # Exibição dos saldos para comparação
-      val_saldo_ofx = saldo_banco if saldo_banco is not None else Decimal("0.00")
-      val_saldo_sis = (
-          total_sistema if total_sistema is not None else Decimal("0.00")
-      )
+            self.log("\n" + "=" * 45)
+            self.log(f"      RESULTADO FINAL - {nome_banco.upper()}")
+            self.log("=" * 45)
+            self.log(f"Total Conciliados (Final): {total_conciliados_final}")
+            self.log(f"  - Cartões: {len(cartoes_conc)}")
+            self.log(f"  - Boletos: {len(boletos_conc)}")
+            self.log(f"  - Outros:  {len(outros_conc)}")
+            self.log(f"Total Pendentes do OFX: {total_pendentes_ofx}")
+            self.log(f"  - Cartões Pendentes: {len(pendentes_ofx_cartoes)}")
+            self.log(f"  - Boletos Pendentes: {len(pendentes_ofx_boletos)}")
+            self.log(f"  - Outros Pendentes:  {len(pendentes_ofx_outros)}")
+            self.log("-" * 45)
 
-      self.log(f"Saldo Final do Extrato (OFX): R$ {val_saldo_ofx:,.2f}")
-      self.log(f"Saldo Final do Sistema (FEXTRATO): R$ {val_saldo_sis:,.2f}")
-      self.log("=" * 45)
+            val_saldo_ofx = saldo_banco if saldo_banco is not None else Decimal("0.00")
+            val_saldo_sis = (
+                total_sistema if total_sistema is not None else Decimal("0.00")
+            )
 
-      # Impressão de pendências restritas ao OFX
-      if total_pendentes_ofx > 0:
-        self.log(
-            "\n--- ITENS PENDENTES DO OFX (NÃO ENCONTRADOS NO SISTEMA) ---"
-        )
-        todas_pendencias_ofx = [
-            ("CARTÕES", pendentes_ofx_cartoes),
-            ("BOLETOS", pendentes_ofx_boletos),
-            ("OUTROS", pendentes_ofx_outros),
-        ]
-        for nome_bloco, lista_bloco in todas_pendencias_ofx:
-          if lista_bloco:
-            self.log(f"\n[BLOCO: {nome_bloco}]")
-            for item in lista_bloco:
-              reg = item["item"]
-              data_formatada = (
-                  reg["data"].strftime("%d/%m/%Y")
-                  if hasattr(reg["data"], "strftime")
-                  else reg["data"]
-              )
-              self.log(
-                  f"  [OFX] Data: {data_formatada} | Valor: R$"
-                  f" {reg['valor']:,.2f} | Histórico: {reg['historico']}"
-              )
-        self.log("-" * 45)
+            self.log(f"Saldo Final do Extrato (OFX): R$ {val_saldo_ofx:,.2f}")
+            self.log(f"Saldo Final do Sistema (FEXTRATO): R$ {val_saldo_sis:,.2f}")
+            self.log("=" * 45)
 
-      # Validação do status de conciliação e saldos
-      saldos_batem = abs(val_saldo_ofx - val_saldo_sis) < Decimal("0.01")
+            if total_pendentes_ofx > 0:
+                self.log(
+                    "\n--- ITENS PENDENTES DO OFX (NÃO ENCONTRADOS NO SISTEMA) ---"
+                )
+                todas_pendencias_ofx = [
+                    ("CARTÕES", pendentes_ofx_cartoes),
+                    ("BOLETOS", pendentes_ofx_boletos),
+                    ("OUTROS", pendentes_ofx_outros),
+                ]
+                for nome_bloco, lista_bloco in todas_pendencias_ofx:
+                    if lista_bloco:
+                        self.log(f"\n[BLOCO: {nome_bloco}]")
+                        for item in lista_bloco:
+                            reg = item["item"]
+                            data_formatada = (
+                                reg["data"].strftime("%d/%m/%Y")
+                                if hasattr(reg["data"], "strftime")
+                                else reg["data"]
+                            )
+                            self.log(
+                                f"  [OFX] Data: {data_formatada} | Valor: R$"
+                                f" {reg['valor']:,.2f} | Histórico: {reg['historico']}"
+                            )
+                self.log("-" * 45)
 
-      self.log("\n")
-      if total_pendentes_ofx == 0 and saldos_batem:
-        self.log("★" * 45)
-        self.log("        BANCO CONCILIADO         ")
-        self.log("★" * 45)
-      else:
-        self.log("✖" * 45)
-        self.log("        BANCO NÃO CONCILIADO       ")
-        self.log("✖" * 45)
+            saldos_batem = abs(val_saldo_ofx - val_saldo_sis) < Decimal("0.01")
 
-      self.log("\nProcesso concluído com sucesso!")
+            self.log("\n")
+            if total_pendentes_ofx == 0 and saldos_batem:
+                self.log("★" * 45)
+                self.log("        BANCO CONCILIADO         ")
+                self.log("★" * 45)
+            else:
+                self.log("✖" * 45)
+                self.log("        BANCO NÃO CONCILIADO       ")
+                self.log("✖" * 45)
 
-    except Exception as e:
-      sys.stdout = sys.__stdout__
-      self.log(f"\n[ERRO CRÍTICO] Ocorreu um erro durante a execução: {e}")
+            self.log("\nProcesso concluído com sucesso!")
+
+        except Exception as e:
+            sys.stdout = sys.__stdout__
+            self.log(f"\n[ERRO CRÍTICO] Ocorreu um erro durante a execução: {e}")
 
 
 if __name__ == "__main__":
-  app = AppConciliacao()
-  app.mainloop()
+    app = AppConciliacao()
+    app.mainloop()
