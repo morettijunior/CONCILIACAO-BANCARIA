@@ -396,6 +396,36 @@ class AppConciliacao(ctk.CTk):
             boletos_conc,
             outros_conc,
         )
+
+        # NOVA ETAPA: Executa a validação e baixa automática dos cartões pendentes do OFX
+        pendentes_ofx_cartoes_para_baixa = [
+            x for x in cartoes_nao_conc if x["origem"] == "OFX"
+        ]
+        if pendentes_ofx_cartoes_para_baixa:
+          from service.conciliacao import processar_baixa_cartoes
+
+          data_ofx_base = (
+              lista_ofx[0]["data"] if lista_ofx else datetime.now().date()
+          )
+          processar_baixa_cartoes(
+              banco_esperado,
+              caminho_banco,
+              pendentes_ofx_cartoes_para_baixa,
+              data_ofx_base,
+          )
+
+          # ATUALIZAÇÃO DA GUI: Como a baixa automática inseriu os registros no banco,
+          # recarregamos a lista do BD e refazemos a comparação para a interface refletir o sucesso!
+          lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
+          (
+              cartoes_conc,
+              cartoes_nao_conc,
+              boletos_conc,
+              boletos_nao_conc,
+              outros_conc,
+              outros_nao_conc,
+          ) = comparar_listas(lista_ofx, lista_bd)
+
         sys.stdout = sys.__stdout__
 
       # Descobre a data final com base no último item do OFX carregado para filtrar o saldo corretamente
@@ -428,7 +458,7 @@ class AppConciliacao(ctk.CTk):
       )
 
       self.log("\n" + "=" * 45)
-      self.log(f"       RESULTADO FINAL - {nome_banco.upper()}")
+      self.log(f"      RESULTADO FINAL - {nome_banco.upper()}")
       self.log("=" * 45)
       self.log(f"Total Conciliados (Final): {total_conciliados_final}")
       self.log(f"  - Cartões: {len(cartoes_conc)}")
@@ -482,7 +512,7 @@ class AppConciliacao(ctk.CTk):
       self.log("\n")
       if total_pendentes_ofx == 0 and saldos_batem:
         self.log("★" * 45)
-        self.log("         BANCO CONCILIADO         ")
+        self.log("        BANCO CONCILIADO         ")
         self.log("★" * 45)
       else:
         self.log("✖" * 45)
