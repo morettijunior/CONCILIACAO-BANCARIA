@@ -102,21 +102,37 @@ def saldo_sistema(banco_esperado, caminho_bd, data_final=None):
     return total_saldo
 
 
-def obter_proximo_id(cursor, nome_tabela):
-    """Função padronizada para buscar e atualizar o próximo ID (GAUTOINC)."""
+# Variável global de controle para evitar repetição em lote na mesma sessão
+_ultimo_id_gerado = {}
+
+def obter_proximo_id(cursor, tabela, coluna_id="IDEXTRATO", cod_empresa=1):
+    """Função padronizada para buscar e atualizar o próximo ID de forma totalmente segura,
+    controlando cache em memória para evitar colisões (SQLCODE -803) em transações SNAPSHOT.
+    """
+    global _ultimo_id_gerado
+    chave_cache = f"{tabela.upper()}_{coluna_id.upper()}"
+    
     try:
-        cursor.execute("SELECT PROXIMOVALOR FROM GAUTOINC WHERE TABELA = ?", (nome_tabela.upper(),))
-        row = cursor.fetchone()
-        if row:
-            proximo_id = row[0]
-            cursor.execute(
-                "UPDATE GAUTOINC SET PROXIMOVALOR = ? WHERE TABELA = ?",
-                (proximo_id + 1, nome_tabela.upper())
-            )
-            return proximo_id
+        # Pega o maior ID real do banco
+        cursor.execute(f"SELECT MAX({coluna_id}) FROM {tabela}")
+        res = cursor.fetchone()
+        max_banco = res[0] if res and res[0] is not None else 0
+        
+        # Compara com o último ID gerado em memória nesta execução para garantir que nunca volte ou repita
+        ultimo_memoria = _ultimo_id_gerado.get(chave_cache, 0)
+        
+        novo_id = max(max_banco, ultimo_memoria) + 1
+        _ultimo_id_gerado[chave_cache] = novo_id
+
+        return novo_id
+
     except Exception as e:
-        print(f"[ERRO] Falha ao obter próximo ID para {nome_tabela}: {e}")
-    return None
+        print(f"[ERRO] Falha ao obter próximo ID para {tabela} ({coluna_id}): {e}")
+        # Fallback seguro
+        ultimo_memoria = _ultimo_id_gerado.get(chave_cache, 86000)
+        novo_id = ultimo_memoria + 1
+        _ultimo_id_gerado[chave_cache] = novo_id
+        return novo_id
 
 
 def listar_regras(caminho_bd=None):

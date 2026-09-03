@@ -56,31 +56,41 @@ def comparar_listas(extrato_ofx, extrato_bd):
             else:
                 outros_nao_conciliado.append(nao_conc_item)
 
-    # 3. VALIDAÇÃO EM LOTE PARA CARTÕES (Sua regra: Taxa Cartão + Num. Documento)
+    # Obter o intervalo de datas do OFX para validação em lote
+    dt_inicio = extrato_ofx[0]["data"].date() if extrato_ofx and hasattr(extrato_ofx[0]["data"], "date") else (extrato_ofx[0]["data"] if extrato_ofx else None)
+    dt_fim = extrato_ofx[-1]["data"].date() if extrato_ofx and hasattr(extrato_ofx[-1]["data"], "date") else (extrato_ofx[-1]["data"] if extrato_ofx else None)
+
+    # 3. VALIDAÇÃO EM LOTE PARA CARTÕES (Considerando intervalo de datas e taxa + Num. Documento)
     cartoes_ofx_pendentes = [
         x for x in cartoes_nao_conciliado if x["origem"] == "OFX"
     ]
 
-    if cartoes_ofx_pendentes:
+    if cartoes_ofx_pendentes and dt_inicio and dt_fim:
         total_ofx_cartoes = sum(item["item"]["valor"] for item in cartoes_ofx_pendentes)
 
-        # Passo 1: Encontra no BD os lançamentos de "TAXA CARTAO" (negativos)
-        itens_taxa_bd = []
-        for item_bd in list(bd_pendentes):
-            hist_bd = str(item_bd.get("historico", "")).upper()
-            val_bd = item_bd.get("valor", 0)
-            if "TAXA CARTAO" in hist_bd and val_bd < 0:
-                itens_taxa_bd.append(item_bd)
+        # Filtra os pendentes do BD que estão dentro do intervalo de datas do OFX
+        bd_no_periodo = []
+        for x in bd_pendentes:
+            data_x = x.get("data")
+            if data_x:
+                data_x_formatada = data_x.date() if hasattr(data_x, "date") else data_x
+                if dt_inicio <= data_x_formatada <= dt_fim:
+                    bd_no_periodo.append(x)
+
+        # Passo 1: Encontra no BD os lançamentos de "TAXA CARTAO" (negativos) no período
+        itens_taxa_bd = [
+            x for x in bd_no_periodo 
+            if "TAXA CARTAO" in str(x.get("historico", "")).upper() and x.get("valor", 0) < 0
+        ]
 
         if itens_taxa_bd:
-            # Passo 2: Para cada taxa encontrada, acha o par positivo com o mesmo NUMERODOCUMENTO
+            # Passo 2: Para cada taxa encontrada, acha o par positivo com o mesmo NUMERODOCUMENTO no período
             lotes_cartao_bd = []
-            docs_utilizados = set()
-
+            
             for taxa in itens_taxa_bd:
                 num_doc = taxa.get("numerodocumento")
                 if num_doc:
-                    for item_bd in bd_pendentes:
+                    for item_bd in bd_no_periodo:
                         if (
                             item_bd.get("numerodocumento") == num_doc
                             and item_bd.get("valor", 0) > 0
@@ -88,14 +98,13 @@ def comparar_listas(extrato_ofx, extrato_bd):
                         ):
                             lotes_cartao_bd.append(item_bd)
                             lotes_cartao_bd.append(taxa)
-                            docs_utilizados.add(num_doc)
                             break
 
             if lotes_cartao_bd:
-                # Passo 3: Soma o líquido (positivos - negativos/taxas)
+                # Passo 3: Soma o líquido de todos os pares encontrados no período (positivos - taxas)
                 total_bd_cartoes = sum(b["valor"] for b in lotes_cartao_bd)
 
-                # Se o total líquido do lote bater com o total dos cartões pendentes no OFX
+                # Se o total líquido do lote no período bater com o total dos cartões pendentes no OFX
                 if abs(total_ofx_cartoes - total_bd_cartoes) < Decimal("0.01"):
                     for item_ofx_p in cartoes_ofx_pendentes:
                         cartoes_nao_conciliado.remove(item_ofx_p)
@@ -150,12 +159,6 @@ def comparar_listas(extrato_ofx, extrato_bd):
         outros_conciliado,
         outros_nao_conciliado,
     )
-
-
-from datetime import datetime
-from decimal import Decimal
-import fdb
-from .bd import obter_proximo_id
 
 
 def inserir_transferencia_fextrato(cursor, codcaixa_origem, codcaixa_destino, valor, data_item, historico, cod_empresa=1):
