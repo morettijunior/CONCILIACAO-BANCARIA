@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 import sys
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, scrolledtext
 import customtkinter as ctk
 from service.bd import (
     consultar_extrato,
@@ -17,6 +17,27 @@ from service.ofx import ler_ofx, saldo_final
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
+
+
+class JanelaDebug(ctk.CTkToplevel):
+    """Janela secundária e discreta apenas para visualização do log técnico de programação"""
+    def __init__(self, parent, log_texto):
+        super().__init__(parent)
+        self.title("Painel de Diagnóstico (DEBUG Técnico)")
+        self.geometry("700x450")
+        self.resizable(True, True)
+
+        self.transient(parent)
+
+        lbl = ctk.CTkLabel(self, text="Log Técnico da Última Execução", font=("Arial", 14, "bold"))
+        lbl.pack(anchor="w", padx=15, pady=(15, 5))
+
+        self.txt_log = scrolledtext.ScrolledText(
+            self, wrap=tk.WORD, font=("Consolas", 10)
+        )
+        self.txt_log.pack(padx=15, pady=5, fill="both", expand=True)
+        self.txt_log.insert(tk.END, log_texto)
+        self.txt_log.configure(state="disabled")  # Somente leitura para evitar edições acidentais
 
 
 class JanelaGerenciarRegras(ctk.CTkToplevel):
@@ -214,8 +235,11 @@ class AppConciliacao(ctk.CTk):
         super().__init__()
 
         self.title("Sistema de Conciliação Bancária")
-        self.geometry("750x680")
+        self.geometry("750x720")
         self.resizable(False, False)
+
+        # Armazena o log completo da última execução para o painel de debug
+        self.log_acumulado = ""
 
         # Carrega as configurações salvas (ou padrões)
         self.config = carregar_config()
@@ -308,15 +332,32 @@ class AppConciliacao(ctk.CTk):
         )
         self.btn_executar.pack(pady=10, padx=20, fill="x")
 
+        # --- ÁREA DE EXIBIÇÃO AMIGÁVEL PARA O USUÁRIO COMUM ---
+        self.frame_resultado = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_resultado.pack(pady=5, padx=20, fill="both", expand=True)
+
         self.caixa_texto = ctk.CTkTextbox(
-            self, font=("Consolas", 12), width=700, height=310
+            self.frame_resultado, font=("Arial", 12), width=700, height=270, fg_color="#2b2b2b", text_color="#ffffff"
         )
-        self.caixa_texto.pack(pady=5, padx=20)
+        self.caixa_texto.pack(fill="both", expand=True)
         self.caixa_texto.insert(
             "0.0",
-            "Sistema pronto. Verifique os caminhos acima e clique em 'Executar"
-            " Conciliação'.\n",
+            "Sistema pronto. Verifique os caminhos acima e clique em 'Executar Conciliação'.\n",
         )
+
+        # --- BOTÃO DISCRETO DE DEBUG TÉCNICO NO CANTO INFERIOR ---
+        self.btn_debug = ctk.CTkButton(
+            self,
+            text="🔧 Logs / Debug Técnico",
+            command=self.abrir_janela_debug,
+            font=("Arial", 10),
+            fg_color="transparent",
+            text_color="#888888",
+            hover_color="#333333",
+            width=150,
+            height=25
+        )
+        self.btn_debug.pack(side="bottom", anchor="se", padx=20, pady=5)
 
     def procurar_ofx(self):
         arquivo = filedialog.askopenfilename(
@@ -349,12 +390,17 @@ class AppConciliacao(ctk.CTk):
     def abrir_tela_regras(self):
         JanelaGerenciarRegras(self)
 
+    def abrir_janela_debug(self):
+        """Abre a janela secundária contendo todo o log técnico acumulado"""
+        JanelaDebug(self, self.log_acumulado)
+
     def log(self, mensagem):
-        self.caixa_texto.insert("end", mensagem + "\n")
-        self.caixa_texto.see("end")
+        """Acumula o log técnico para a janela de debug"""
+        self.log_acumulado += mensagem + "\n"
 
     def rodar_conciliacao(self):
         self.salvar_alteracoes_config()
+        self.log_acumulado = ""  # Limpa o log da execução anterior
 
         banco_esperado = self.banco_var.get()
         nome_banco = "Sicredi" if banco_esperado == 748 else "Sicoob"
@@ -362,18 +408,13 @@ class AppConciliacao(ctk.CTk):
         caminho_banco = self.entry_bd.get().strip()
 
         self.caixa_texto.delete("0.0", "end")
-        self.log(
-            f"Processando conciliação para o {nome_banco} (Banco:"
-            f" {banco_esperado})...\n"
-        )
+        self.log(f"Processando conciliação para o {nome_banco} (Banco: {banco_esperado})...\n")
         self.update()
 
         try:
             lista_ofx = ler_ofx(banco_esperado, caminho_extrato)
             if not lista_ofx:
-                self.log(
-                    "[AVISO] Nenhum lançamento encontrado no OFX ou falha na leitura."
-                )
+                self.caixa_texto.insert("end", "[AVISO] Nenhum lançamento encontrado no OFX ou falha na leitura.")
                 return
 
             lista_bd = consultar_extrato(banco_esperado, caminho_extrato, caminho_banco)
@@ -398,18 +439,12 @@ class AppConciliacao(ctk.CTk):
             self.log(f"-> Total de registros no OFX: {len(lista_ofx)}")
             self.log(f"-> Total de registros no BD: {len(lista_bd)}")
             self.log(f"-> Já conciliados (Total): {total_conciliados}")
-            self.log(
-                f"-> Não conciliados (antes das regras): {total_nao_conciliados}"
-            )
+            self.log(f"-> Não conciliados (antes das regras): {total_nao_conciliados}")
 
             if total_nao_conciliados > 0:
-                self.log(
-                    "\nAplicando regras automáticas aos itens não conciliados por"
-                    " bloco..."
-                )
+                self.log("\nAplicando regras automáticas aos itens não conciliados por bloco...")
 
                 class RedirecionadorPrint:
-
                     def __init__(self, callback_log):
                         self.callback_log = callback_log
 
@@ -486,40 +521,45 @@ class AppConciliacao(ctk.CTk):
                 + len(pendentes_ofx_outros)
             )
 
-            self.log("\n" + "=" * 45)
-            self.log(f"      RESULTADO FINAL - {nome_banco.upper()}")
-            self.log("=" * 45)
-            self.log(f"Total Conciliados (Final): {total_conciliados_final}")
-            self.log(f"  - Cartões: {len(cartoes_conc)}")
-            self.log(f"  - Boletos: {len(boletos_conc)}")
-            self.log(f"  - Outros:  {len(outros_conc)}")
-            self.log(f"Total Pendentes do OFX: {total_pendentes_ofx}")
-            self.log(f"  - Cartões Pendentes: {len(pendentes_ofx_cartoes)}")
-            self.log(f"  - Boletos Pendentes: {len(pendentes_ofx_boletos)}")
-            self.log(f"  - Outros Pendentes:  {len(pendentes_ofx_outros)}")
-            self.log("-" * 45)
+            self.log(f"\nResultado Final Calculado - Conciliados: {total_conciliados_final} | Pendentes: {total_pendentes_ofx}")
 
             val_saldo_ofx = saldo_banco if saldo_banco is not None else Decimal("0.00")
             val_saldo_sis = (
                 total_sistema if total_sistema is not None else Decimal("0.00")
             )
+            saldos_batem = abs(val_saldo_ofx - val_saldo_sis) < Decimal("0.01")
 
-            self.log(f"Saldo Final do Extrato (OFX): R$ {val_saldo_ofx:,.2f}")
-            self.log(f"Saldo Final do Sistema (FEXTRATO): R$ {val_saldo_sis:,.2f}")
-            self.log("=" * 45)
+            # --- MONTANDO A TELA AMIGÁVEL PARA O USUÁRIO FINAL ---
+            texto_tela = ""
 
-            if total_pendentes_ofx > 0:
-                self.log(
-                    "\n--- ITENS PENDENTES DO OFX (NÃO ENCONTRADOS NO SISTEMA) ---"
-                )
+            if total_pendentes_ofx == 0 and saldos_batem:
+                texto_tela += "★" * 40 + "\n"
+                texto_tela += "          BANCO CONCILIADO          \n"
+                texto_tela += "★" * 40 + "\n\n"
+                texto_tela += f"Todos os lançamentos do extrato foram conciliados com sucesso.\n"
+                texto_tela += f"Saldo Final Conferido: R$ {val_saldo_ofx:,.2f}\n"
+            else:
+                texto_tela += "✖" * 40 + "\n"
+                texto_tela += "        BANCO NÃO CONCILIADO        \n"
+                texto_tela += "✖" * 40 + "\n\n"
+                texto_tela += "MOTIVO: Existem lançamentos pendentes que exigem ação manual.\n\n"
+
                 todas_pendencias_ofx = [
                     ("CARTÕES", pendentes_ofx_cartoes),
                     ("BOLETOS", pendentes_ofx_boletos),
                     ("OUTROS", pendentes_ofx_outros),
                 ]
+
                 for nome_bloco, lista_bloco in todas_pendencias_ofx:
                     if lista_bloco:
-                        self.log(f"\n[BLOCO: {nome_bloco}]")
+                        texto_tela += f"📌 GRUPO DE {nome_bloco}:\n"
+                        if nome_bloco == "CARTÕES":
+                            texto_tela += "➜ AÇÃO NECESSÁRIA: BAIXAR CARTÕES DE FORMA MANUAL\n"
+                        elif nome_bloco == "BOLETOS":
+                            texto_tela += "➜ AÇÃO NECESSÁRIA: VERIFICAR LIQUIDAÇÃO DE BOLETOS\n"
+                        else:
+                            texto_tela += "➜ AÇÃO NECESSÁRIA: TRATAR LANÇAMENTOS DIVERSOS\n"
+
                         for item in lista_bloco:
                             reg = item["item"]
                             data_formatada = (
@@ -527,29 +567,18 @@ class AppConciliacao(ctk.CTk):
                                 if hasattr(reg["data"], "strftime")
                                 else reg["data"]
                             )
-                            self.log(
-                                f"  [OFX] Data: {data_formatada} | Valor: R$"
-                                f" {reg['valor']:,.2f} | Histórico: {reg['historico']}"
-                            )
-                self.log("-" * 45)
+                            texto_tela += f"   • Data: {data_formatada} | Valor: R$ {reg['valor']:,.2f}\n"
+                            texto_tela += f"     Histórico: {reg['historico']}\n"
+                        texto_tela += "\n"
 
-            saldos_batem = abs(val_saldo_ofx - val_saldo_sis) < Decimal("0.01")
-
-            self.log("\n")
-            if total_pendentes_ofx == 0 and saldos_batem:
-                self.log("★" * 45)
-                self.log("        BANCO CONCILIADO         ")
-                self.log("★" * 45)
-            else:
-                self.log("✖" * 45)
-                self.log("        BANCO NÃO CONCILIADO       ")
-                self.log("✖" * 45)
-
+            self.caixa_texto.insert("0.0", texto_tela)
             self.log("\nProcesso concluído com sucesso!")
 
         except Exception as e:
             sys.stdout = sys.__stdout__
-            self.log(f"\n[ERRO CRÍTICO] Ocorreu um erro durante a execução: {e}")
+            erro_msg = f"\n[ERRO CRÍTICO] Ocorreu um erro durante a execução: {e}"
+            self.log(erro_msg)
+            self.caixa_texto.insert("0.0", erro_msg)
 
 
 if __name__ == "__main__":
