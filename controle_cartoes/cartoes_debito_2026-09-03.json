@@ -1,0 +1,11 @@
+{
+    "data": "2026-09-03",
+    "tipo": "debito",
+    "total_liquido": "282.74",
+    "total_bruto": "285.88",
+    "bd_referencia": {
+        "data": "2026-09-03",
+        "valor": "282.74",
+        "historico": "LT:  DOC:  AUT: 089909  Parcela: 1/1 EMIT: CLI: DISTRIBUIDORA DE CARNES SOUZA LTDA"
+    }
+}

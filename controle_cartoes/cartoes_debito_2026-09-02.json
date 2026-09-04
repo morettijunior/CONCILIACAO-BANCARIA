@@ -1,0 +1,11 @@
+{
+    "data": "2026-09-02",
+    "tipo": "debito",
+    "total_liquido": "65.07",
+    "total_bruto": "67.08",
+    "bd_referencia": {
+        "data": "2026-09-02",
+        "valor": "65.07",
+        "historico": "SICREDI DEBITO MASTER-883014987 |0001-37"
+    }
+}

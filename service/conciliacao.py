@@ -1,7 +1,39 @@
 from datetime import datetime
 from decimal import Decimal
+import json
+import os
 import fdb
 from .bd import obter_proximo_id
+from datetime import datetime, timedelta
+
+# Pasta onde os arquivos JSON de controle de cartões conciliados serão salvos
+PASTA_CONTROLE_JSON = "controle_cartoes"
+
+def garantir_pasta_json():
+    if not os.path.exists(PASTA_CONTROLE_JSON):
+        os.makedirs(PASTA_CONTROLE_JSON)
+
+def carregar_json_conciliado(data_str, tipo):
+    """Passo 3: Verifica se já existe JSON registrando a conciliação desse grupo/data."""
+    garantir_pasta_json()
+    caminho_arquivo = os.path.join(PASTA_CONTROLE_JSON, f"cartoes_{tipo}_{data_str}.json")
+    if os.path.exists(caminho_arquivo):
+        try:
+            with open(caminho_arquivo, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
+def salvar_json_conciliado(data_str, tipo, dados):
+    """Passo 5: Salva o grupo conciliado em arquivo JSON após sucesso no BD."""
+    garantir_pasta_json()
+    caminho_arquivo = os.path.join(PASTA_CONTROLE_JSON, f"cartoes_{tipo}_{data_str}.json")
+    try:
+        with open(caminho_arquivo, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"[ERRO JSON] Falha ao salvar controle para {tipo} em {data_str}: {e}")
 
 
 def comparar_listas(extrato_ofx, extrato_bd):
@@ -25,10 +57,14 @@ def comparar_listas(extrato_ofx, extrato_bd):
         else:
             item_ofx["bloco"] = "outros"
 
-    # 2. Cruzamento 1 para 1 normal (Data e Valor exatos)
+    # 2. Cruzamento 1 para 1 normal (Apenas para Boletos e Outros)
     ofx_pendentes = list(extrato_ofx)
 
     for item_ofx in ofx_pendentes:
+        if item_ofx["bloco"] == "cartoes":
+            cartoes_nao_conciliado.append({"origem": "OFX", "item": item_ofx})
+            continue
+
         encontrado = False
         for item_bd in bd_pendentes:
             if (
@@ -36,9 +72,7 @@ def comparar_listas(extrato_ofx, extrato_bd):
                 and item_ofx["valor"] == item_bd["valor"]
             ):
                 par = {"ofx": item_ofx, "bd": item_bd}
-                if item_ofx["bloco"] == "cartoes":
-                    cartoes_conciliado.append(par)
-                elif item_ofx["bloco"] == "boletos":
+                if item_ofx["bloco"] == "boletos":
                     boletos_conciliado.append(par)
                 else:
                     outros_conciliado.append(par)
@@ -49,74 +83,36 @@ def comparar_listas(extrato_ofx, extrato_bd):
 
         if not encontrado:
             nao_conc_item = {"origem": "OFX", "item": item_ofx}
-            if item_ofx["bloco"] == "cartoes":
-                cartoes_nao_conciliado.append(nao_conc_item)
-            elif item_ofx["bloco"] == "boletos":
+            if item_ofx["bloco"] == "boletos":
                 boletos_nao_conciliado.append(nao_conc_item)
             else:
                 outros_nao_conciliado.append(nao_conc_item)
 
-    # Obter o intervalo de datas do OFX para validação em lote
-    dt_inicio = extrato_ofx[0]["data"].date() if extrato_ofx and hasattr(extrato_ofx[0]["data"], "date") else (extrato_ofx[0]["data"] if extrato_ofx else None)
-    dt_fim = extrato_ofx[-1]["data"].date() if extrato_ofx and hasattr(extrato_ofx[-1]["data"], "date") else (extrato_ofx[-1]["data"] if extrato_ofx else None)
-
-    # 3. VALIDAÇÃO EM LOTE PARA CARTÕES (Considerando intervalo de datas e taxa + Num. Documento)
+    # =========================================================================
+    # PASSO 1, 2 e 3 (Cache JSON) APLICADOS NA CONCILIAÇÃO DE CARTÕES
+    # =========================================================================
     cartoes_ofx_pendentes = [
         x for x in cartoes_nao_conciliado if x["origem"] == "OFX"
     ]
 
-    if cartoes_ofx_pendentes and dt_inicio and dt_fim:
-        total_ofx_cartoes = sum(item["item"]["valor"] for item in cartoes_ofx_pendentes)
-
-        # Filtra os pendentes do BD que estão dentro do intervalo de datas do OFX
-        bd_no_periodo = []
-        for x in bd_pendentes:
-            data_x = x.get("data")
-            if data_x:
-                data_x_formatada = data_x.date() if hasattr(data_x, "date") else data_x
-                if dt_inicio <= data_x_formatada <= dt_fim:
-                    bd_no_periodo.append(x)
-
-        # Passo 1: Encontra no BD os lançamentos de "TAXA CARTAO" (negativos) no período
-        itens_taxa_bd = [
-            x for x in bd_no_periodo 
-            if "TAXA CARTAO" in str(x.get("historico", "")).upper() and x.get("valor", 0) < 0
-        ]
-
-        if itens_taxa_bd:
-            # Passo 2: Para cada taxa encontrada, acha o par positivo com o mesmo NUMERODOCUMENTO no período
-            lotes_cartao_bd = []
+    if cartoes_ofx_pendentes:
+        for item_wrapper in cartoes_ofx_pendentes:
+            item_ofx = item_wrapper["item"]
+            hist = str(item_ofx.get("historico", "")).upper()
+            tipo = "debito" if ("DEBITO" in hist or "DÉBITO" in hist) else "credito"
             
-            for taxa in itens_taxa_bd:
-                num_doc = taxa.get("numerodocumento")
-                if num_doc:
-                    for item_bd in bd_no_periodo:
-                        if (
-                            item_bd.get("numerodocumento") == num_doc
-                            and item_bd.get("valor", 0) > 0
-                            and item_bd not in lotes_cartao_bd
-                        ):
-                            lotes_cartao_bd.append(item_bd)
-                            lotes_cartao_bd.append(taxa)
-                            break
+            dt = item_ofx.get("data")
+            dt_str = dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt)[:10]
 
-            if lotes_cartao_bd:
-                # Passo 3: Soma o líquido de todos os pares encontrados no período (positivos - taxas)
-                total_bd_cartoes = sum(b["valor"] for b in lotes_cartao_bd)
-
-                # Se o total líquido do lote no período bater com o total dos cartões pendentes no OFX
-                if abs(total_ofx_cartoes - total_bd_cartoes) < Decimal("0.01"):
-                    for item_ofx_p in cartoes_ofx_pendentes:
-                        cartoes_nao_conciliado.remove(item_ofx_p)
-                        cartoes_conciliado.append({
-                            "ofx": item_ofx_p["item"],
-                            "bd": lotes_cartao_bd[0],  # Associa ao principal do lote
-                        })
-
-                    # Remove os itens do BD usados da lista de pendentes gerais
-                    for b_item in lotes_cartao_bd:
-                        if b_item in bd_pendentes:
-                            bd_pendentes.remove(b_item)
+            # PASSO 3: Conferência dos grupos OFX com o JSON
+            registro_json = carregar_json_conciliado(dt_str, tipo)
+            if registro_json:
+                # Já foi conciliado anteriormente via arquivo JSON
+                cartoes_nao_conciliado.remove(item_wrapper)
+                cartoes_conciliado.append({
+                    "ofx": item_ofx,
+                    "bd": registro_json.get("bd_referencia", {})
+                })
 
     # 4. VALIDAÇÃO EM LOTE PARA BOLETOS
     boletos_ofx_pendentes = [
@@ -162,15 +158,11 @@ def comparar_listas(extrato_ofx, extrato_bd):
 
 
 def inserir_transferencia_fextrato(cursor, codcaixa_origem, codcaixa_destino, valor, data_item, historico, cod_empresa=1):
-    """Insere um par de lançamentos de transferência diretamente na tabela FEXTRATO 
-    (um débito na origem e um crédito no destino), sem criar FLAN.
-    """
     valor_dec = Decimal(str(valor))
     valor_negativo = -abs(valor_dec)
     valor_positivo = abs(valor_dec)
     agora = datetime.now()
 
-    # Obtém IDs para os dois extratos usando o GAUTOINC padronizado
     id_origem = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO", cod_empresa)
     id_destino = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO", cod_empresa)
 
@@ -182,7 +174,6 @@ def inserir_transferencia_fextrato(cursor, codcaixa_origem, codcaixa_destino, va
         ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'T', 'F', ?, ?)
     """
 
-    # 1. Lançamento de saída (Débito/Transferência na conta de origem)
     cursor.execute(
         sql_fextrato,
         (
@@ -203,7 +194,6 @@ def inserir_transferencia_fextrato(cursor, codcaixa_origem, codcaixa_destino, va
         ),
     )
 
-    # 2. Lançamento de entrada (Crédito na conta de destino)
     cursor.execute(
         sql_fextrato,
         (
@@ -235,9 +225,6 @@ def inserir_itens(
     boletos_conc,
     outros_conc,
 ):
-    """Varre as listas de não conciliados (origem OFX) aplicando regras,
-    insere no Firebird (suportando regras normais ou transferência direta) e migra para as respectivas listas de conciliados.
-    """
     conexao = fdb.connect(
         dsn=caminho_bd,
         user="SYSDBA",
@@ -286,7 +273,6 @@ def inserir_itens(
                     data_item = dados_item["data"]
                     historico_final = regra_encontrada["HISTORICO"] or dados_item["historico"]
 
-                    # SE A REGRA POSSUI CAIXA DE ORIGEM E DESTINO, É UMA TRANSFERÊNCIA
                     if regra_encontrada.get("CODCAIXA_ORIGEM") and regra_encontrada.get("CODCAIXA_DESTINO"):
                         inserir_transferencia_fextrato(
                             cursor,
@@ -307,13 +293,7 @@ def inserir_itens(
                                 "historico": historico_final,
                             },
                         })
-                        print(
-                            f"[{nome_bloco.upper()} - REGRA TRANSFERÊNCIA APLICADA] Data: {data_item.strftime('%d/%m/%Y')} | "
-                            f"De: {regra_encontrada['CODCAIXA_ORIGEM']} Para: {regra_encontrada['CODCAIXA_DESTINO']}"
-                        )
-
                     else:
-                        # FLUXO NORMAL (Gera FLAN e FEXTRATO)
                         novo_idlan = obter_proximo_id(cursor, "FLAN", "IDLAN", 1)
                         novo_idextrato = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO", 1)
 
@@ -404,11 +384,6 @@ def inserir_itens(
                                 "historico": historico_final,
                             },
                         })
-                        print(
-                            f"[{nome_bloco.upper()} - REGRA APLICADA] Data:"
-                            f" {data_item.strftime('%d/%m/%Y')} | '{dados_item['historico']}'"
-                            f" -> Inserido no FLAN/FEXTRATO (IDLAN: {novo_idlan})"
-                        )
 
     except Exception as e:
         conexao.rollback()
@@ -422,31 +397,46 @@ def processar_baixa_cartoes(
     banco_esperado, caminho_bd, cartoes_ofx_pendentes, data_ofx
 ):
     """Executa a validação e a baixa automática completa de cartões (Débito e Crédito)
-    garantindo que TODOS os títulos em aberto do Caixa 03 sejam marcados como
-    COMPENSADO = 'T'.
+    seguindo os Passos 1, 2, 4 e 5 (com controle de JSON por grupo/data).
     """
     LIMITE_TAXA_DEBITO = Decimal("0.03")  # 3%
-    LIMITE_TAXA_CREDITO = Decimal("0.15")  # 15%
+    LIMITE_TAXA_CREDITO = Decimal("0.15") # 15%
 
     codcaixa_banco = "02" if int(banco_esperado) == 748 else "07"
 
-    print("\n--- [DEBUG CARTÕES] Iniciando processamento de baixa ---")
+    print("\n--- [DEBUG CARTÕES] Iniciando processamento e baixa por grupos ---")
 
-    cartoes_debito_ofx = []
-    cartoes_credito_ofx = []
+    # PASSO 1: Receber do OFX e dividir em 02 listas (Crédito e Débito)
+    lista_credito_ofx = []
+    lista_debito_ofx = []
 
-    for item in cartoes_ofx_pendentes:
-        hist = str(item["item"]["historico"]).upper()
+    for item_obj in cartoes_ofx_pendentes:
+        item = item_obj["item"] if isinstance(item_obj, dict) and "item" in item_obj else item_obj
+        hist = str(item.get("historico", "")).upper()
         if "DEBITO" in hist or "DÉBITO" in hist:
-            cartoes_debito_ofx.append(item["item"])
+            lista_debito_ofx.append(item)
         else:
-            cartoes_credito_ofx.append(item["item"])
+            lista_credito_ofx.append(item)
 
-    total_liquido_debito = sum(i["valor"] for i in cartoes_debito_ofx)
-    total_liquido_credito = sum(i["valor"] for i in cartoes_credito_ofx)
+    # PASSO 2: Dividir as listas Crédito/Débito em grupos por data
+    grupos_por_data = {}
 
-    print(f"Total Líquido Débito (OFX): R$ {total_liquido_debito:,.2f}")
-    print(f"Total Líquido Crédito (OFX): R$ {total_liquido_credito:,.2f}")
+    def agrupar_por_data(itens, tipo):
+        for item in itens:
+            dt = item.get("data")
+            dt_str = dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt)[:10]
+            chave = f"{tipo}_{dt_str}"
+            if chave not in grupos_por_data:
+                grupos_por_data[chave] = {
+                    "tipo": tipo,
+                    "data_str": dt_str,
+                    "data_obj": dt,
+                    "itens": []
+                }
+            grupos_por_data[chave]["itens"].append(item)
+
+    agrupar_por_data(lista_credito_ofx, "credito")
+    agrupar_por_data(lista_debito_ofx, "debito")
 
     conexao = fdb.connect(
         dsn=caminho_bd,
@@ -457,259 +447,118 @@ def processar_baixa_cartoes(
     cursor = conexao.cursor()
 
     try:
-        # --- PROCESSAMENTO DE DÉBITO ---
-        if total_liquido_debito > 0:
+        for chave_grupo, grupo in grupos_por_data.items():
+            tipo = grupo["tipo"]
+            dt_str = grupo["data_str"]
+            dt_obj = grupo["data_obj"]
+            itens_grupo = grupo["itens"]
+
+            total_liquido_grupo = sum(i["valor"] for i in itens_grupo)
+
+            # PASSO 3: Conferência com o JSON (se já foi salvo, pula o banco)
+            if carregar_json_conciliado(dt_str, tipo):
+                print(f"[CACHE JSON] Grupo {chave_grupo} já conciliado anteriormente. Ignorando baixa duplicada.")
+                continue
+
+            # PASSO 4: Inserção no BD utilizando as regras de % de taxas
+            print(f"[PROCESSAMENTO] Avaliando grupo {chave_grupo} | Total Líquido: R$ {total_liquido_grupo:,.2f}")
+
+            formas_busca = ('04', '18') if tipo == "debito" else ('05', '17')
+            limite_taxa = LIMITE_TAXA_DEBITO if tipo == "debito" else LIMITE_TAXA_CREDITO
+
+            data_limite_bd = dt_obj - timedelta(days=1)
             cursor.execute("""
                 SELECT IDEXTRATO, VALOR, NUMERODOCUMENTO, HISTORICO, CODFORMA 
                 FROM FEXTRATO 
-                WHERE CODCAIXA = '03' AND COMPENSADO = 'F' AND CODFORMA IN ('04', '18')
-            """)
+                WHERE CODCAIXA = '03' AND COMPENSADO = 'F' AND CODFORMA IN (?, ?) AND DATA <= ?
+            """, (formas_busca[0], formas_busca[1], data_limite_bd))
             titulos_aberto = cursor.fetchall()
-            print(f"[DEBUG DÉBITO] Títulos encontrados no BD: {len(titulos_aberto)}")
 
-            if titulos_aberto:
-                total_bruto_debito = sum(
-                    Decimal(str(t[1])) for t in titulos_aberto if t[1] is not None
+            if not titulos_aberto:
+                print(f"[ALERTA] Nenhum título em aberto no Caixa 03 para o grupo {chave_grupo}.")
+                continue
+
+            total_bruto = sum(Decimal(str(t[1])) for t in titulos_aberto if t[1] is not None)
+            num_doc = titulos_aberto[0][2]
+            historico_orig = titulos_aberto[0][3]
+
+            taxa_calculada = (total_bruto - total_liquido_grupo) / total_bruto
+
+            if 0 <= taxa_calculada <= limite_taxa:
+                print(f"[VALIDADO] Grupo {chave_grupo} aprovado! Bruto: R$ {total_bruto:,.2f} | Taxa: {taxa_calculada*100:.2f}%")
+
+                for t in titulos_aberto:
+                    cursor.execute(
+                        "UPDATE FEXTRATO SET COMPENSADO = 'T', DATACOMPENSACAO = ? WHERE IDEXTRATO = ?",
+                        (dt_obj, t[0])
+                    )
+
+                # Inserção 1 (Saída Caixa 03)
+                novo_id_1 = obter_proximo_id(cursor, "FEXTRATO")
+                cursor.execute(
+                    """
+                    INSERT INTO FEXTRATO (
+                        IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
+                        HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
+                        DATAVENCIMENTO, CCUSTO, CODFORMA, TABELA3, HISTCOMPESACAO
+                    )
+                    VALUES (?, 1, 1, '03', 'S', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '05', '2', 'Receb Cartão CARTÕES')
+                    """,
+                    (novo_id_1, -total_bruto, historico_orig, num_doc, dt_obj, dt_obj, datetime.now(), dt_obj),
                 )
-                num_doc = titulos_aberto[0][2]
-                historico_orig = titulos_aberto[0][3]
 
-                taxa_calculada = (
-                    total_bruto_debito - total_liquido_debito
-                ) / total_bruto_debito
-
-                if 0 <= taxa_calculada <= LIMITE_TAXA_DEBITO:
-                    print(
-                        f"[BAIXA AUTOMÁTICA] Débito validado! Bruto: R$"
-                        f" {total_bruto_debito:,.2f} | Líquido: R$"
-                        f" {total_liquido_debito:,.2f}"
+                # Inserção 2 (Entrada Banco Bruto)
+                novo_id_2 = obter_proximo_id(cursor, "FEXTRATO")
+                cursor.execute(
+                    """
+                    INSERT INTO FEXTRATO (
+                        IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
+                        HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
+                        DATAVENCIMENTO, CCUSTO, CODFORMA, HISTCOMPESACAO
                     )
+                    VALUES (?, 1, 1, ?, 'D', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '01', 'Receb Cartão CARTÕES')
+                    """,
+                    (novo_id_2, codcaixa_banco, total_bruto, historico_orig, num_doc, dt_obj, dt_obj, datetime.now(), dt_obj),
+                )
 
-                    for t in titulos_aberto:
-                        cursor.execute(
-                            """
-                            UPDATE FEXTRATO 
-                            SET COMPENSADO = 'T', DATACOMPENSACAO = ? 
-                            WHERE IDEXTRATO = ?
-                            """,
-                            (
-                                data_ofx,
-                                t[0],
-                            ),
-                        )
-
-                    # Inserção 1 (Saída Caixa 03)
-                    novo_id_1 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, TABELA3, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, '03', 'S', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '05', '2', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_1,
-                            -total_bruto_debito,
-                            historico_orig,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
+                # Inserção 3 (Taxa do Cartão)
+                valor_taxa = total_bruto - total_liquido_grupo
+                novo_id_3 = obter_proximo_id(cursor, "FEXTRATO")
+                nome_historico_taxa = "TAXA CARTAO DE DEBITO" if tipo == "debito" else "TAXA CARTAO DE CREDITO"
+                cursor.execute(
+                    """
+                    INSERT INTO FEXTRATO (
+                        IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
+                        HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
+                        DATAVENCIMENTO, CCUSTO, CODFORMA, ETAXACARTAO, HISTCOMPESACAO
                     )
+                    VALUES (?, 1, 1, ?, 'S', ?, 'T', ?, ?, ?, ?, ?, ?, '3.12.007', '01', 'T', 'Receb Cartão CARTÕES')
+                    """,
+                    (novo_id_3, codcaixa_banco, -valor_taxa, nome_historico_taxa, num_doc, dt_obj, dt_obj, datetime.now(), dt_obj),
+                )
 
-                    # Inserção 2 (Entrada Banco Bruto)
-                    novo_id_2 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, ?, 'D', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '01', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_2,
-                            codcaixa_banco,
-                            total_bruto_debito,
-                            historico_orig,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
-                    )
+                conexao.commit()
+                print(f"[SUCESSO BD] Grupo {chave_grupo} baixado com sucesso!")
 
-                    # Inserção 3 (Taxa do Cartão)
-                    valor_taxa = total_bruto_debito - total_liquido_debito
-                    novo_id_3 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, ETAXACARTAO, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, ?, 'S', ?, 'T', 'TAXA CARTAO DE DEBITO', ?, ?, ?, ?, ?, '3.12.007', '01', 'T', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_3,
-                            codcaixa_banco,
-                            -valor_taxa,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
-                    )
-
-                    conexao.commit()
-                    print("[SUCESSO] Baixa de débito efetivada no banco de dados!")
-                else:
-                    print(
-                        f"[ALERTA] Taxa de Débito ({taxa_calculada * 100:.2f}%) ultrapassou"
-                        f" o limite de {LIMITE_TAXA_DEBITO * 100}%."
-                    )
+                # PASSO 5: Salvar a lista em um arquivo JSON após sucesso no BD
+                dados_para_json = {
+                    "data": dt_str,
+                    "tipo": tipo,
+                    "total_liquido": str(total_liquido_grupo),
+                    "total_bruto": str(total_bruto),
+                    "bd_referencia": {
+                        "data": dt_str,
+                        "valor": str(total_liquido_grupo),
+                        "historico": historico_orig
+                    }
+                }
+                salvar_json_conciliado(dt_str, tipo, dados_para_json)
             else:
-                print(
-                    "[DEBUG DÉBITO] Nenhum título em aberto encontrado no Caixa '03' para"
-                    " as formas '04' ou '18'."
-                )
-
-        # --- PROCESSAMENTO DE CRÉDITO ---
-        if total_liquido_credito > 0:
-            cursor.execute("""
-                SELECT IDEXTRATO, VALOR, NUMERODOCUMENTO, HISTORICO, CODFORMA 
-                FROM FEXTRATO 
-                WHERE CODCAIXA = '03' AND COMPENSADO = 'F' AND CODFORMA IN ('05', '17')
-            """)
-            titulos_aberto = cursor.fetchall()
-            print(f"[DEBUG CRÉDITO] Títulos encontrados no BD: {len(titulos_aberto)}")
-
-            if titulos_aberto:
-                total_bruto_credito = sum(
-                    Decimal(str(t[1])) for t in titulos_aberto if t[1] is not None
-                )
-                num_doc = titulos_aberto[0][2]
-                historico_orig = titulos_aberto[0][3]
-
-                taxa_calculada = (
-                    total_bruto_credito - total_liquido_credito
-                ) / total_bruto_credito
-
-                if 0 <= taxa_calculada <= LIMITE_TAXA_CREDITO:
-                    print(
-                        f"[BAIXA AUTOMÁTICA] Crédito validado! Bruto: R$"
-                        f" {total_bruto_credito:,.2f} | Líquido: R$"
-                        f" {total_liquido_credito:,.2f}"
-                    )
-
-                    for t in titulos_aberto:
-                        cursor.execute(
-                            """
-                            UPDATE FEXTRATO 
-                            SET COMPENSADO = 'T', DATACOMPENSACAO = ? 
-                            WHERE IDEXTRATO = ?
-                            """,
-                            (
-                                data_ofx,
-                                t[0],
-                            ),
-                        )
-
-                    # Inserção 1 (Saída Caixa 03)
-                    novo_id_1 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, TABELA3, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, '03', 'S', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '05', '2', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_1,
-                            -total_bruto_credito,
-                            historico_orig,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
-                    )
-
-                    # Inserção 2 (Entrada Banco Bruto)
-                    novo_id_2 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, ?, 'D', ?, 'T', ?, ?, ?, ?, ?, ?, '1.01.001', '01', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_2,
-                            codcaixa_banco,
-                            total_bruto_credito,
-                            historico_orig,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
-                    )
-
-                    # Inserção 3 (Taxa do Cartão)
-                    valor_taxa = total_bruto_credito - total_liquido_credito
-                    novo_id_3 = obter_proximo_id(cursor, "FEXTRATO")
-                    cursor.execute(
-                        """
-                        INSERT INTO FEXTRATO (
-                            IDEXTRATO, CODEMPRESA, CODFILIAL, CODCAIXA, TIPO, VALOR, COMPENSADO, 
-                            HISTORICO, NUMERODOCUMENTO, DATA, DATACOMPENSACAO, DATADIGITACAO, 
-                            DATAVENCIMENTO, CCUSTO, CODFORMA, ETAXACARTAO, HISTCOMPESACAO
-                        )
-                        VALUES (?, 1, 1, ?, 'S', ?, 'T', 'TAXA CARTAO DE DEBITO', ?, ?, ?, ?, ?, '3.12.007', '01', 'T', 'Receb Cartão CARTÕES')
-                        """,
-                        (
-                            novo_id_3,
-                            codcaixa_banco,
-                            -valor_taxa,
-                            num_doc,
-                            data_ofx,
-                            data_ofx,
-                            datetime.now(),
-                            data_ofx,
-                        ),
-                    )
-
-                    conexao.commit()
-                    print("[SUCESSO] Baixa de crédito efetivada no banco de dados!")
-                else:
-                    print(
-                        f"[ALERTA] Taxa de Crédito ({taxa_calculada * 100:.2f}%)"
-                        f" ultrapassou o limite de {LIMITE_TAXA_CREDITO * 100}%."
-                    )
-            else:
-                print(
-                    "[DEBUG CRÉDITO] Nenhum título em aberto encontrado no Caixa '03' para"
-                    " as formas '05' ou '17'."
-                )
+                print(f"[ALERTA TAXA] Taxa calculada ({taxa_calculada*100:.2f}%) fora do limite para o grupo {chave_grupo}.")
 
     except Exception as e:
         conexao.rollback()
-        print(f"[ERRO CRÍTICO] Falha ao processar baixa de cartões: {e}")
+        print(f"[ERRO CRÍTICO CARTÕES] {e}")
     finally:
         cursor.close()
         conexao.close()
