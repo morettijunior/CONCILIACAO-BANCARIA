@@ -102,37 +102,43 @@ def saldo_sistema(banco_esperado, caminho_bd, data_final=None):
     return total_saldo
 
 
-# Variável global de controle para evitar repetição em lote na mesma sessão
-_ultimo_id_gerado = {}
-
-def obter_proximo_id(cursor, tabela, coluna_id="IDEXTRATO", cod_empresa=1):
-    """Função padronizada para buscar e atualizar o próximo ID de forma totalmente segura,
-    controlando cache em memória para evitar colisões (SQLCODE -803) em transações SNAPSHOT.
+def obter_proximo_id(cursor, tabela, coluna_id, cod_empresa=1):
+    """Busca e incrementa atomicamente o próximo ID na tabela de controle GAUTOINC do ERP TGA,
+    respeitando o nome exato da tabela e da coluna correspondente.
     """
-    global _ultimo_id_gerado
-    chave_cache = f"{tabela.upper()}_{coluna_id.upper()}"
+    tabela_upper = tabela.upper()
+    # Normaliza caso venha como FEXTRATO / TEXTRATO
+    if tabela_upper in ["FEXTRATO", "TEXTRATO"]:
+        nome_tabela_gauto = "FEXTRATO"
+    else:
+        nome_tabela_gauto = "FLAN"
     
     try:
-        # Pega o maior ID real do banco
-        cursor.execute(f"SELECT MAX({coluna_id}) FROM {tabela}")
+        # 1. Incrementa o valor atual na tabela GAUTOINC
+        sql_update = """
+            UPDATE GAUTOINC 
+            SET VALOR = VALOR + 1 
+            WHERE TABELA = ? AND CAMPO = ? AND CODEMPRESA = ?
+        """
+        cursor.execute(sql_update, (nome_tabela_gauto, coluna_id, cod_empresa))
+        
+        # 2. Busca o valor recém-atualizado
+        sql_select = """
+            SELECT VALOR 
+            FROM GAUTOINC 
+            WHERE TABELA = ? AND CAMPO = ? AND CODEMPRESA = ?
+        """
+        cursor.execute(sql_select, (nome_tabela_gauto, coluna_id, cod_empresa))
         res = cursor.fetchone()
-        max_banco = res[0] if res and res[0] is not None else 0
         
-        # Compara com o último ID gerado em memória nesta execução para garantir que nunca volte ou repita
-        ultimo_memoria = _ultimo_id_gerado.get(chave_cache, 0)
-        
-        novo_id = max(max_banco, ultimo_memoria) + 1
-        _ultimo_id_gerado[chave_cache] = novo_id
-
-        return novo_id
+        if res and res[0] is not None:
+            return int(res[0])
+        else:
+            raise Exception(f"Registro de controle não encontrado em GAUTOINC para {nome_tabela_gauto}.{coluna_id}")
 
     except Exception as e:
-        print(f"[ERRO] Falha ao obter próximo ID para {tabela} ({coluna_id}): {e}")
-        # Fallback seguro
-        ultimo_memoria = _ultimo_id_gerado.get(chave_cache, 86000)
-        novo_id = ultimo_memoria + 1
-        _ultimo_id_gerado[chave_cache] = novo_id
-        return novo_id
+        print(f"[ERRO CRÍTICO] Falha ao atualizar GAUTOINC para {nome_tabela_gauto} ({coluna_id}): {e}")
+        raise e
 
 
 def listar_regras(caminho_bd=None):

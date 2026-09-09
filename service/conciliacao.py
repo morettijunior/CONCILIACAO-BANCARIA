@@ -1,17 +1,31 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import json
 import os
 import fdb
 from .bd import obter_proximo_id
-from datetime import datetime, timedelta
 
-# Pasta onde os arquivos JSON de controle de cartões conciliados serão salvos
-PASTA_CONTROLE_JSON = "controle_cartoes"
+def obter_pasta_documentos_conciliacao():
+    """Retorna e garante o caminho fixo na pasta Documentos do usuário: Documentos/ConciliacaoBancaria/controle_cartoes"""
+    home_dir = os.path.expanduser("~")
+    documentos_path = os.path.join(home_dir, "Documents")
+    if not os.path.exists(documentos_path):
+        documentos_path = os.path.join(home_dir, "Documentos") # fallback para pt-br
+
+    pasta_base = os.path.join(documentos_path, "ConciliacaoBancaria")
+    pasta_cartoes = os.path.join(pasta_base, "controle_cartoes")
+    
+    if not os.path.exists(pasta_cartoes):
+        os.makedirs(pasta_cartoes, exist_ok=True)
+        
+    return pasta_cartoes
+
+# Pasta fixa de controle de cartões na pasta Documentos
+PASTA_CONTROLE_JSON = obter_pasta_documentos_conciliacao()
 
 def garantir_pasta_json():
     if not os.path.exists(PASTA_CONTROLE_JSON):
-        os.makedirs(PASTA_CONTROLE_JSON)
+        os.makedirs(PASTA_CONTROLE_JSON, exist_ok=True)
 
 def carregar_json_conciliado(data_str, tipo):
     """Passo 3: Verifica se já existe JSON registrando a conciliação desse grupo/data."""
@@ -494,7 +508,7 @@ def processar_baixa_cartoes(
                     )
 
                 # Inserção 1 (Saída Caixa 03)
-                novo_id_1 = obter_proximo_id(cursor, "FEXTRATO")
+                novo_id_1 = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO")
                 cursor.execute(
                     """
                     INSERT INTO FEXTRATO (
@@ -508,7 +522,7 @@ def processar_baixa_cartoes(
                 )
 
                 # Inserção 2 (Entrada Banco Bruto)
-                novo_id_2 = obter_proximo_id(cursor, "FEXTRATO")
+                novo_id_2 = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO")
                 cursor.execute(
                     """
                     INSERT INTO FEXTRATO (
@@ -523,7 +537,7 @@ def processar_baixa_cartoes(
 
                 # Inserção 3 (Taxa do Cartão)
                 valor_taxa = total_bruto - total_liquido_grupo
-                novo_id_3 = obter_proximo_id(cursor, "FEXTRATO")
+                novo_id_3 = obter_proximo_id(cursor, "FEXTRATO", "IDEXTRATO")
                 nome_historico_taxa = "TAXA CARTAO DE DEBITO" if tipo == "debito" else "TAXA CARTAO DE CREDITO"
                 cursor.execute(
                     """

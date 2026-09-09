@@ -1,0 +1,11 @@
+{
+    "data": "2026-09-08",
+    "tipo": "credito",
+    "total_liquido": "945.23",
+    "total_bruto": "980",
+    "bd_referencia": {
+        "data": "2026-09-08",
+        "valor": "945.23",
+        "historico": "LT:  DOC:  AUT: 049415  Parcela: 1/1 EMIT: CLI: TRANSPORTES BRESSAN & BRESSAN LTDA"
+    }
+}

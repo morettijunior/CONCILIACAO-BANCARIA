@@ -1,0 +1,11 @@
+{
+    "data": "2026-09-04",
+    "tipo": "debito",
+    "total_liquido": "590.93",
+    "total_bruto": "597.5",
+    "bd_referencia": {
+        "data": "2026-09-04",
+        "valor": "590.93",
+        "historico": "LT:  DOC:  AUT: B1qkOV  Parcela: 1/1 EMIT: CLI: MECANICA DIESEL 2 AMIGOS LTDA"
+    }
+}
