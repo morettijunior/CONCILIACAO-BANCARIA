@@ -536,8 +536,7 @@ class AppConciliacao(ctk.CTk):
                 texto_tela += "★" * 40 + "\n"
                 texto_tela += "          BANCO CONCILIADO          \n"
                 texto_tela += "★" * 40 + "\n\n"
-                texto_tela += f"Todos os lançamentos do extrato foram conciliados com sucesso.\n"
-                texto_tela += f"Saldo Final Conferido: R$ {val_saldo_ofx:,.2f}\n"
+                texto_tela += f"Todos os lançamentos do extrato foram conciliados com sucesso.\n\n"
             else:
                 texto_tela += "✖" * 40 + "\n"
                 texto_tela += "        BANCO NÃO CONCILIADO        \n"
@@ -570,6 +569,12 @@ class AppConciliacao(ctk.CTk):
                             texto_tela += f"   • Data: {data_formatada} | Valor: R$ {reg['valor']:,.2f}\n"
                             texto_tela += f"     Histórico: {reg['historico']}\n"
                         texto_tela += "\n"
+
+            # --- SALDOS EXIBIDOS OBRIGATORIAMENTE EM QUALQUER CENÁRIO ---
+            texto_tela += "-" * 40 + "\n"
+            texto_tela += f"📊 SALDO BANCO (OFX): R$ {val_saldo_ofx:,.2f}\n"
+            texto_tela += f"📊 SALDO SISTEMA (FEXTRATO): R$ {val_saldo_sis:,.2f}\n"
+            texto_tela += "-" * 40 + "\n"
 
             self.caixa_texto.insert("0.0", texto_tela)
             self.log("\nProcesso concluído com sucesso!")

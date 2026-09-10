@@ -60,11 +60,14 @@ def comparar_listas(extrato_ofx, extrato_bd):
     outros_conciliado = []
     outros_nao_conciliado = []
 
-    # 1. Classificar cada item do OFX no seu respectivo bloco
+# 1. Classificar cada item do OFX no seu respectivo bloco
     for item_ofx in extrato_ofx:
         hist = str(item_ofx["historico"]).upper()
 
-        if any(k in hist for k in ["VISA", "MASTER", "AMEX", "CIELO", "CARTAO", "CREDIT", "DEBIT"]):
+        # Evita classificar "DEBITO CONVENIOS" ou contas diversas como cartão
+        eh_convenio_ou_diversos = "CONVENIOS" in hist or "CONVÊNIO" in hist or "TARIFA" in hist
+
+        if not eh_convenio_ou_diversos and any(k in hist for k in ["VISA", "MASTER", "AMEX", "CIELO", "CARTAO", "CREDIT", "DEBITO VISA", "DEBITO MASTER", "CARTAO DE DEBITO"]):
             item_ofx["bloco"] = "cartoes"
         elif "CRÉD.LIQUIDAÇÃO COBRANÇA" in hist or "CRED.LIQUIDACAO COBRANCA" in hist:
             item_ofx["bloco"] = "boletos"
