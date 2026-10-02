@@ -537,11 +537,12 @@ class AppConciliacao(ctk.CTk):
                 texto_tela += "          BANCO CONCILIADO          \n"
                 texto_tela += "★" * 40 + "\n\n"
                 texto_tela += f"Todos os lançamentos do extrato foram conciliados com sucesso.\n\n"
-            else:
-                texto_tela += "✖" * 40 + "\n"
-                texto_tela += "        BANCO NÃO CONCILIADO        \n"
-                texto_tela += "✖" * 40 + "\n\n"
-                texto_tela += "MOTIVO: Existem lançamentos pendentes que exigem ação manual.\n\n"
+            elif total_pendentes_ofx > 0 and saldos_batem:
+                texto_tela += "⚡" * 20 + "\n"
+                texto_tela += "    BANCO CONCILIADO POR SALDO    \n"
+                texto_tela += "   (Com ressalva de lançamentos)    \n"
+                texto_tela += "⚡" * 20 + "\n\n"
+                texto_tela += "Os saldos batem, mas existem lançamentos pendentes/agrupados no sistema.\n\n"
 
                 todas_pendencias_ofx = [
                     ("CARTÕES", pendentes_ofx_cartoes),
@@ -553,12 +554,13 @@ class AppConciliacao(ctk.CTk):
                     if lista_bloco:
                         texto_tela += f"📌 GRUPO DE {nome_bloco}:\n"
                         if nome_bloco == "CARTÕES":
-                            texto_tela += "➜ AÇÃO NECESSÁRIA: BAIXAR CARTÕES DE FORMA MANUAL\n"
+                            texto_tela += "➜ AÇÃO NECESSÁRIA / ACOMPANHAR: BAIXAR CARTÕES DE FORMA MANUAL\n"
                         elif nome_bloco == "BOLETOS":
-                            texto_tela += "➜ AÇÃO NECESSÁRIA: VERIFICAR LIQUIDAÇÃO DE BOLETOS\n"
+                            texto_tela += "➜ AÇÃO NECESSÁRIA / ACOMPANHAR: VERIFICAR LIQUIDAÇÃO DE BOLETOS\n"
                         else:
-                            texto_tela += "➜ AÇÃO NECESSÁRIA: TRATAR LANÇAMENTOS DIVERSOS\n"
+                            texto_tela += "➜ AÇÃO NECESSÁRIA / ACOMPANHAR: TRATAR LANÇAMENTOS DIVERSOS\n"
 
+                        texto_tela += "-" * 45 + "\n"
                         for item in lista_bloco:
                             reg = item["item"]
                             data_formatada = (
@@ -566,15 +568,43 @@ class AppConciliacao(ctk.CTk):
                                 if hasattr(reg["data"], "strftime")
                                 else reg["data"]
                             )
-                            texto_tela += f"   • Data: {data_formatada} | Valor: R$ {reg['valor']:,.2f}\n"
-                            texto_tela += f"     Histórico: {reg['historico']}\n"
+                            texto_tela += f"📅 DATA: {data_formatada}   |   💰 VALOR: R$ {reg['valor']:,.2f}\n"
+                            texto_tela += f"   Histórico: {reg['historico']}\n"
+                            texto_tela += "-" * 45 + "\n"
+                        texto_tela += "\n"
+            else:
+                texto_tela += "✖" * 40 + "\n"
+                texto_tela += "        BANCO NÃO CONCILIADO        \n"
+                texto_tela += "✖" * 40 + "\n\n"
+                texto_tela += "MOTIVO: Os saldos do Banco e do Sistema não conferem.\n\n"
+
+                todas_pendencias_ofx = [
+                    ("CARTÕES", pendentes_ofx_cartoes),
+                    ("BOLETOS", pendentes_ofx_boletos),
+                    ("OUTROS", pendentes_ofx_outros),
+                ]
+
+                for nome_bloco, lista_bloco in todas_pendencias_ofx:
+                    if lista_bloco:
+                        texto_tela += f"📌 GRUPO DE {nome_bloco}:\n"
+                        texto_tela += "-" * 45 + "\n"
+                        for item in lista_bloco:
+                            reg = item["item"]
+                            data_formatada = (
+                                reg["data"].strftime("%d/%m/%Y")
+                                if hasattr(reg["data"], "strftime")
+                                else reg["data"]
+                            )
+                            texto_tela += f"📅 DATA: {data_formatada}   |   💰 VALOR: R$ {reg['valor']:,.2f}\n"
+                            texto_tela += f"   Histórico: {reg['historico']}\n"
+                            texto_tela += "-" * 45 + "\n"
                         texto_tela += "\n"
 
             # --- SALDOS EXIBIDOS OBRIGATORIAMENTE EM QUALQUER CENÁRIO ---
-            texto_tela += "-" * 40 + "\n"
+            texto_tela += "=" * 40 + "\n"
             texto_tela += f"📊 SALDO BANCO (OFX): R$ {val_saldo_ofx:,.2f}\n"
             texto_tela += f"📊 SALDO SISTEMA (FEXTRATO): R$ {val_saldo_sis:,.2f}\n"
-            texto_tela += "-" * 40 + "\n"
+            texto_tela += "=" * 40 + "\n"
 
             self.caixa_texto.insert("0.0", texto_tela)
             self.log("\nProcesso concluído com sucesso!")
